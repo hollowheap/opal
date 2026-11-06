@@ -1,3 +1,11 @@
+---
+name: opal
+description: UI craft: DTCG tokens, wireframing, and rendered audits.
+license: MIT
+compatibility: Requires Chromium and ui-probe.
+disable-model-invocation: true
+---
+
 # Opal
 
 Use when the diff renders or changes a user interface.
