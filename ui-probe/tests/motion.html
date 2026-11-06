@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Motion fixture</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #ffffff;
+        color: #1a1a1a;
+        font-family: system-ui, sans-serif;
+      }
+      button,
+      a {
+        display: inline-flex;
+        min-width: 44px;
+        min-height: 44px;
+        padding: 8px 16px;
+        transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      .panel {
+        transition: opacity 200ms ease-in-out;
+      }
+      .no-focus:focus,
+      .no-focus:focus-visible {
+        outline: none;
+        box-shadow: none;
+      }
+      @keyframes slide {
+        from {
+          transform: translateX(-8px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Motion fixture</h1>
+    <p class="panel">This page has motion and no focus rule.</p>
+    <button type="button">One</button>
+    <button type="button" class="no-focus">No focus ring</button>
+    <a href="#main">Two</a>
+  </body>
+</html>

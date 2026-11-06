@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "pack": "test-error",
+  "structural": [],
+  "rules": [
+    {
+      "id": "nested-cards",
+      "enabled": true,
+      "severity": "error",
+      "layer": "layout"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "structural": [
+    {
+      "name": "unknown-property",
+      "selector": "*",
+      "properties": {
+        "card": { "deny": ["nested"] }
+      },
+      "severity": "advisory",
+      "layer": "layout"
+    }
+  ],
+  "rules": []
+}

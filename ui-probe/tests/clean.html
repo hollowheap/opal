@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clean fixture</title>
+    <style>
+      :root {
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #ffffff;
+        color: #1a1a1a;
+        font-family: system-ui, sans-serif;
+      }
+      main {
+        display: grid;
+        gap: 16px;
+        max-width: 720px;
+      }
+      h1,
+      h2 {
+        margin: 0;
+      }
+      p {
+        margin: 0;
+        line-height: 1.5;
+      }
+      a,
+      button {
+        display: inline-flex;
+        align-items: center;
+        min-width: 44px;
+        min-height: 44px;
+        padding: 8px 16px;
+        border: 1px solid #1a1a1a;
+        border-radius: 0;
+        background: #ffffff;
+        color: #1a1a1a;
+        font: inherit;
+      }
+      a:hover,
+      button:hover {
+        background: #f2f2f2;
+      }
+      a:focus-visible,
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid #1a1a1a;
+        outline-offset: 2px;
+      }
+      button:disabled {
+        color: #333333;
+        border-color: #333333;
+      }
+      input {
+        min-height: 44px;
+        padding: 8px 16px;
+        border: 1px solid #1a1a1a;
+        background: #ffffff;
+        color: #1a1a1a;
+        font: inherit;
+      }
+      input::placeholder {
+        color: #333333;
+      }
+      ::selection {
+        background: #d0d0d0;
+        color: #1a1a1a;
+      }
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Clean fixture</h1>
+      <p>Every rendered and stylesheet check passes on this page.</p>
+      <h2>Controls</h2>
+      <p><a href="#main">A link with a name</a></p>
+      <button type="button">Named button</button>
+      <button type="button" disabled>Disabled button</button>
+      <label>
+        <span>Label</span>
+        <input type="text" placeholder="Type here" aria-label="Sample input" />
+      </label>
+    </main>
+  </body>
+</html>

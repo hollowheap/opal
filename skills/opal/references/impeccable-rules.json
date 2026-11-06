@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "pack": "impeccable",
+  "structural": [
+    {
+      "name": "no-gradient-text",
+      "selector": "*",
+      "properties": {
+        "background-clip": {
+          "deny": [
+            "text"
+          ]
+        }
+      },
+      "severity": "advisory",
+      "layer": "layout"
+    }
+  ],
+  "rules": [
+    {
+      "id": "nested-cards",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "layout"
+    },
+    {
+      "id": "kicker-above-heading",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "layout",
+      "params": {
+        "maxTextLength": 40,
+        "requireUppercaseOrTracking": true
+      }
+    },
+    {
+      "id": "line-length",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "layout",
+      "params": {
+        "maxCh": 75
+      }
+    },
+    {
+      "id": "extreme-negative-tracking",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "layout",
+      "params": {
+        "minEm": -0.04
+      }
+    },
+    {
+      "id": "gpt-thin-border-wide-shadow",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "layout",
+      "params": {
+        "blurPx": 8
+      }
+    },
+    {
+      "id": "side-tab",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "layout"
+    },
+    {
+      "id": "em-dash-overuse",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "content",
+      "params": {
+        "max": 8
+      }
+    },
+    {
+      "id": "marketing-buzzword",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "content",
+      "params": {
+        "words": [
+          "supercharge",
+          "streamline",
+          "empower",
+          "world-class",
+          "seamless",
+          "leverage",
+          "elevate",
+          "unlock"
+        ]
+      }
+    },
+    {
+      "id": "bounce-easing",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "sheet",
+      "params": {}
+    }
+  ]
+}

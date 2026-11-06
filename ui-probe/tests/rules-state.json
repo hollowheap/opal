@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "pack": "test-state",
+  "structural": [],
+  "rules": [
+    {
+      "id": "line-length",
+      "enabled": true,
+      "severity": "error",
+      "layer": "layout",
+      "params": {
+        "maxCh": 20
+      }
+    }
+  ]
+}

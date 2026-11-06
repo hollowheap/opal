@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Card surface fixture</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #ffffff; color: #1a1a1a; font-family: system-ui, sans-serif; }
+      .surface {
+        padding: 16px;
+        border: 1px solid #1a1a1a;
+        background: #ffffff;
+      }
+      .shadow {
+        padding: 16px;
+        background: #ffffff;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      }
+      .gradient {
+        padding: 16px;
+        background-image: linear-gradient(90deg, #f2f2f2, #ffffff);
+      }
+      .ghost {
+        padding: 16px;
+        background: transparent;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="surface">
+      <div class="shadow">Shadow surface</div>
+      <div class="gradient">Gradient surface</div>
+      <div class="ghost">Transparent shadow, not a card</div>
+    </div>
+  </body>
+</html>

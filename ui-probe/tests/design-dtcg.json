@@ -1,0 +1,56 @@
+{
+  "color": {
+    "$type": "color",
+    "ink": { "$value": "#1a1a1a", "$description": "Body text" },
+    "paper": { "$value": "#ffffff" },
+    "accent": { "$value": "#0055ff" },
+    "wash": {
+      "$value": { "type": "linear", "angle": 90, "stops": [] },
+      "$type": "gradient"
+    }
+  },
+  "font": {
+    "$type": "fontFamily",
+    "body": { "$value": ["Inter", "system-ui", "sans-serif"] },
+    "display": { "$value": "Georgia" }
+  },
+  "spacing": {
+    "$type": "dimension",
+    "sm": { "$value": "8px" },
+    "md": { "$value": "16px" }
+  },
+  "radius": {
+    "$type": "dimension",
+    "sm": { "$value": "4px" },
+    "pill": { "$value": "50%" }
+  },
+  "typography": {
+    "body": {
+      "$value": {
+        "fontFamily": "Inter",
+        "fontSize": "16px",
+        "fontWeight": 400,
+        "lineHeight": "24px",
+        "letterSpacing": "0px"
+      },
+      "$type": "typography"
+    },
+    "display": {
+      "$value": {
+        "fontFamily": "Georgia",
+        "fontSize": "32px",
+        "fontWeight": 700,
+        "lineHeight": "40px",
+        "letterSpacing": "-0.01em"
+      },
+      "$type": "typography"
+    }
+  },
+  "surface": {
+    "light": {
+      "caret": { "$value": "#1a1a1a" },
+      "selection": { "$value": "#d0d0d0" },
+      "focusRing": { "$value": ["#0055ff"] }
+    }
+  }
+}

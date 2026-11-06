@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Generic violations</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 8px;
+        background: #ffffff;
+        color: #777777;
+        font-family: system-ui, sans-serif;
+      }
+      h1 { font-size: 20px; margin: 0; }
+      h3 { font-size: 14px; margin: 0; }
+      button {
+        width: 10px;
+        height: 10px;
+        padding: 0;
+        border: 0;
+        background: #eeeeee;
+        color: #777777;
+      }
+      .clip {
+        width: 60px;
+        height: 16px;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+      .wide {
+        width: 2000px;
+        height: 10px;
+        background: #eeeeee;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Title</h1>
+    <h3>Skip</h3>
+    <button tabindex="3"></button>
+    <div class="clip">This text is clipped because it is too long for the box.</div>
+    <div class="wide"></div>
+  </body>
+</html>

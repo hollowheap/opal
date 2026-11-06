@@ -1,0 +1,6 @@
+{
+  "colors": ["#1a1a1a", "#ffffff"],
+  "spacingPx": [8, 16],
+  "radiiPx": [8],
+  "fontFamilies": ["system-ui"]
+}

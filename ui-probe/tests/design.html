@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Design fixture</title>
+    <style>
+      :root {
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #ffffff;
+        color: #1a1a1a;
+        font-family: system-ui, sans-serif;
+      }
+      button {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 10px 16px;
+        border: 1px solid #1a1a1a;
+        border-radius: 4px;
+        background: #ffffff;
+        color: #1a1a1a;
+      }
+      button:hover {
+        background: #f2f2f2;
+      }
+      button:focus-visible {
+        outline: 2px solid #1a1a1a;
+      }
+      ::selection {
+        background: #d0d0d0;
+      }
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      .serif {
+        font-family: Georgia, serif;
+      }
+      .alert {
+        color: #cc0000;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Design fixture</h1>
+    <p class="alert">This paragraph breaks the palette.</p>
+    <p class="serif">This paragraph breaks the font list.</p>
+    <button type="button">Off-scale button</button>
+  </body>
+</html>

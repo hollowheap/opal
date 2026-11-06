@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "structural": [],
+  "rules": [
+    {
+      "id": "unknown-rule",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "layout"
+    }
+  ]
+}

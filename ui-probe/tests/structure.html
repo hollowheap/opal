@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Structure fixture</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #ffffff; color: #1a1a1a; font-family: system-ui, sans-serif; }
+      .card { padding: 16px; border: 1px solid #1a1a1a; border-radius: 8px; background: #ffffff; }
+      .card .card { padding: 16px; border: 1px solid #1a1a1a; border-radius: 8px; background: #ffffff; }
+      .kicker { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+      .icon { width: 32px; height: 32px; display: grid; place-items: center; }
+      .metric { font-size: 48px; }
+      h2 { margin: 0; font-size: 24px; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="card">Inner card</div>
+      <span class="kicker">Section</span>
+      <h2>With eyebrow</h2>
+      <div class="icon"><svg width="16" height="16"></svg></div>
+      <h2>With icon tile</h2>
+      <div class="metric">98%</div>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "structural": [
+    {
+      "name": "palette-only",
+      "selector": "p",
+      "properties": {
+        "color": { "allowFrom": "colors" },
+        "font-family": { "allowFrom": "fonts" }
+      },
+      "severity": "error",
+      "layer": "layout"
+    }
+  ],
+  "rules": [
+    {
+      "id": "line-length",
+      "enabled": true,
+      "severity": "error",
+      "layer": "layout",
+      "params": {
+        "maxCh": "param:type.missing.maxCh"
+      }
+    }
+  ]
+}

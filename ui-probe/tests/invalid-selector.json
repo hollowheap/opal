@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "structural": [
+    {
+      "name": "bad-selector",
+      "selector": "div[",
+      "properties": {},
+      "severity": "advisory",
+      "layer": "layout"
+    }
+  ],
+  "rules": []
+}

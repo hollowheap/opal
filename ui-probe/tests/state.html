@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>State rule fixture</title>
+    <style>
+      body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; color: #1a1a1a; background: #ffffff; }
+      #panel { width: 700px; }
+      #panel p { margin: 0; font-size: 16px; }
+      button { min-width: 44px; min-height: 44px; }
+    </style>
+  </head>
+  <body>
+    <button id="open" aria-expanded="false" aria-controls="panel">Open</button>
+    <div id="panel" hidden>
+      <p>This expanded panel carries a paragraph that is deliberately long enough to exceed a short line-length cap and it keeps going so the rule fires only while the panel is open.</p>
+    </div>
+    <script>
+      document.getElementById("open").onclick = () => {
+        document.getElementById("open").setAttribute("aria-expanded", "true");
+        document.getElementById("panel").hidden = false;
+      };
+    </script>
+  </body>
+</html>

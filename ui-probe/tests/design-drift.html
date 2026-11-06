@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DTCG design drift</title>
+    <style>
+      :root {
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #ffffff;
+        color: #1a1a1a;
+        font-family: Inter, system-ui, sans-serif;
+      }
+      h1 {
+        margin: 0;
+        font-family: Georgia, serif;
+        font-size: 32px;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+      ::selection {
+        background: #d0d0d0;
+      }
+      .mixed {
+        margin: 0;
+        font-family: Inter, "Comic Sans MS", sans-serif;
+      }
+      .card {
+        margin-top: 16px;
+        padding: 13px;
+        border: 1px solid #1a1a1a;
+        border-radius: 10px;
+        background: #f2f2f2;
+        font-family: "Comic Sans MS", cursive;
+      }
+      .gradient {
+        margin-top: 16px;
+        padding: 16px;
+        background-color: #123456;
+        background-image: linear-gradient(90deg, #123456, #654321);
+        color: #1a1a1a;
+      }
+      .pill,
+      .px-pill {
+        width: 40px;
+        height: 40px;
+        margin-top: 16px;
+        border: 1px solid #1a1a1a;
+        background: #ffffff;
+      }
+      .pill {
+        border-radius: 50%;
+      }
+      .px-pill {
+        border-radius: 50px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Design drift</h1>
+    <p class="small">This paragraph uses an off-scale size and colour.</p>
+    <p class="mixed">The first family is allowed and the second is not.</p>
+    <div class="card">Off-scale spacing, radius, colour, and font.</div>
+    <div class="gradient">Gradient backgrounds are excluded from colour checks.</div>
+    <div class="pill">Percent radius</div>
+    <div class="px-pill">Pixel radius</div>
+  </body>
+</html>

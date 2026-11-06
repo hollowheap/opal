@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "structural": [],
+  "rules": [
+    {
+      "id": "line-length",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "layout",
+      "params": {
+        "maxCh": "param:"
+      }
+    }
+  ]
+}
