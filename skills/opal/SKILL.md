@@ -37,15 +37,15 @@ The rules pack reports slop patterns. Treat its findings as advisory, not bans: 
 
 ## Setup
 
-Run `scripts/ui-audit.sh init` once per project. Fill `.opal/design.json`; add `.opal/rules.json` only to override the bundled Impeccable pack. Then run `scripts/ui-audit.sh audit <url> -- --theme both --viewport sweep`.
+Run `~/.opal/bin/ui-probe init` once per project. Fill `.opal/design.json`; add `.opal/rules.json` only to override the bundled Impeccable pack. Then run `~/.opal/bin/ui-probe audit <url> -- --theme both --viewport sweep`.
 
 ## Audit
 
 Read `artifacts/ui-design.md` when present; use its tokens, density, typography, and constraints as the design source. If it is absent, infer them from the diff.
 
-Run `scripts/ui-audit.sh source` for source patterns in changed UI files before reading the diff. Treat matches as evidence, not findings; verify each match in context.
+Run `~/.opal/bin/ui-probe source` for source patterns in changed UI files before reading the diff. Treat matches as evidence, not findings; verify each match in context.
 
-Run `scripts/ui-audit.sh audit <url> -- [flags]` before judging. A rendered review without a probe run is incomplete. The probe renders desktop and mobile viewports in light and dark themes and samples hover and focus states; it reports findings derived from rendered geometry and computed colors, plus a candidate list and tab order, as JSON. Use `--expand` to open each ARIA disclosure one at a time and report per-state deltas. Read the script and the report for thresholds and evidence. Without the tool or a browser, inspect supplied screenshots and list every unrendered check under unverified.
+Run `~/.opal/bin/ui-probe audit <url> -- [flags]` before judging. A rendered review without a probe run is incomplete. The probe renders desktop and mobile viewports in light and dark themes and samples hover and focus states; it reports findings derived from rendered geometry and computed colors, plus a candidate list and tab order, as JSON. Use `--expand` to open each ARIA disclosure one at a time and report per-state deltas. Read the script and the report for thresholds and evidence. Without the tool or a browser, inspect supplied screenshots and list every unrendered check under unverified.
 
 Exercise preload, loaded, empty, error, disabled, collapsed, and expanded; snapshot only the states the diff touches.
 
