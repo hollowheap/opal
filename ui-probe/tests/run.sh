@@ -2,14 +2,16 @@
 set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
-root=$(cd "$here/../../.." && pwd)
-bin=${UI_PROBE_BIN:-$root/pkgs/ui-probe/target/debug/ui-probe}
+root=$(cd "$here/../.." && pwd)
+bin=${UI_PROBE_BIN:-$root/ui-probe/target/debug/ui-probe}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+export HOME="$tmp/home"
+mkdir -p "$HOME"
 
 if [ ! -x "$bin" ]; then
   echo "missing ui-probe binary: $bin" >&2
-  echo "build it with: nix develop .#rust --command bash -lc 'cd pkgs/ui-probe && cargo build'" >&2
+  echo "build it with: cargo build --manifest-path ui-probe/Cargo.toml" >&2
   exit 1
 fi
 
@@ -61,6 +63,32 @@ err_has() {
   fi
 }
 
+run_in() {
+  name=$1
+  dir=$2
+  expected=$3
+  out=$4
+  shift 4
+  (cd "$dir" && "$bin" "$@") >"$out" 2>"$tmp/$name.err"
+  code=$?
+  if [ "$code" -eq "$expected" ]; then
+    ok
+  else
+    bad "$name exited $code, expected $expected"
+    sed -n '1,5p' "$tmp/$name.err" >&2
+  fi
+}
+
+exists() {
+  name=$1
+  path=$2
+  if [ -f "$path" ]; then
+    ok
+  else
+    bad "$name missing file: $path"
+  fi
+}
+
 file_url() {
   printf 'file://%s/%s' "$here" "$1"
 }
@@ -69,7 +97,7 @@ clean_url=$(file_url clean.html)
 generic_url=$(file_url generic.html)
 design_url=$(file_url design-drift.html)
 dtcg="$here/design-dtcg.json"
-pack="$root/assets/skills/review/references/impeccable-rules.json"
+pack="$root/skills/opal/references/impeccable-rules.json"
 
 run clean 0 "$tmp/clean.json" --url "$clean_url" --no-sandbox --pretty
 jqr clean-empty "$tmp/clean.json" '.findings == []'
@@ -162,6 +190,98 @@ for name in invalid-key invalid-rule-id invalid-property invalid-selector invali
   run "$name" 1 "$tmp/$name.json" --url "$clean_url" --no-sandbox --rules "$here/$name.json"
   err_has "$name" "rules:"
 done
+
+run init 0 "$tmp/init.out" init "$tmp/project"
+exists init-design "$tmp/project/.opal/design.json"
+exists init-readme "$tmp/project/.opal/README.md"
+
+mkdir -p "$tmp/home/.opal" "$tmp/project/.opal" "$tmp/neutral"
+cat >"$tmp/home/.opal/rules.json" <<'EOF'
+{
+  "version": 1,
+  "pack": "user",
+  "structural": [
+    {
+      "name": "user-border-style",
+      "selector": ".surface",
+      "properties": {
+        "border-style": { "deny": ["solid"] }
+      }
+    }
+  ],
+  "rules": [
+    { "id": "nested-cards", "enabled": true, "severity": "advisory", "layer": "layout" },
+    { "id": "line-length", "enabled": true, "severity": "advisory", "layer": "layout", "params": { "maxCh": 40 } }
+  ]
+}
+EOF
+cat >"$tmp/project/.opal/rules.json" <<'EOF'
+{
+  "version": 1,
+  "pack": "project",
+  "structural": [
+    {
+      "name": "project-border-width",
+      "selector": ".surface",
+      "properties": {
+        "border-width": { "deny": ["1px"] }
+      }
+    }
+  ],
+  "rules": [
+    { "id": "nested-cards", "enabled": true, "severity": "error", "layer": "layout" }
+  ]
+}
+EOF
+
+run_in pack "$tmp/project" 0 "$tmp/pack.out" pack
+if [ "$(sed -n '1p' "$tmp/pack.out")" = "$tmp/project/.opal/rules.json" ]; then
+  ok
+else
+  bad "pack first source is not the project rules file"
+fi
+if [ "$(sed -n '2p' "$tmp/pack.out")" = "$tmp/home/.opal/rules.json" ]; then
+  ok
+else
+  bad "pack second source is not the user rules file"
+fi
+
+run_in pack-explicit "$tmp/project" 0 "$tmp/pack-explicit.out" pack --rules "$here/rules-error.json"
+if [ "$(sed -n '1p' "$tmp/pack-explicit.out")" = "$here/rules-error.json" ]; then
+  ok
+else
+  bad "pack --rules does not take precedence"
+fi
+
+run_in overlay "$tmp/project" 2 "$tmp/overlay.json" audit "$(file_url cards.html)" --no-sandbox --pretty
+jqr overlay-named-error "$tmp/overlay.json" '[.findings[] | select(.check == "nested-cards" and .severity == "error")] | length == 2'
+jqr overlay-named-override "$tmp/overlay.json" '[.findings[] | select(.check == "nested-cards" and .severity == "advisory")] | length == 0'
+jqr overlay-project-structural "$tmp/overlay.json" '[.findings[] | select(.check == "project-border-width")] | length == 1'
+jqr overlay-user-structural "$tmp/overlay.json" '[.findings[] | select(.check == "user-border-style")] | length == 1'
+jqr overlay-sources "$tmp/overlay.json" '.sources.rules | length == 2 and (.[0] | endswith("/.opal/rules.json")) and (.[1] | endswith("/.opal/rules.json"))'
+jqr overlay-design-source "$tmp/overlay.json" '(.sources.design | endswith("/.opal/design.json")) and .sources.designOrigin == "project"'
+
+run_in audit-separator "$tmp/project" 2 "$tmp/audit-separator.json" audit -- "$(file_url cards.html)" --no-sandbox --pretty
+jqr audit-separator-sources "$tmp/audit-separator.json" '.sources.rules | length == 2'
+
+cat >"$tmp/project/.opal/design.json" <<'EOF'
+{
+  "color": {
+    "ink": { "$value": "#1a1a1a", "$type": "color" }
+  }
+}
+EOF
+run_in design-resolve "$tmp/project" 2 "$tmp/design-resolve.json" audit "$(file_url design.html)" --no-sandbox --pretty
+jqr design-source "$tmp/design-resolve.json" '(.sources.design | endswith("/.opal/design.json")) and .sources.designOrigin == "project"'
+jqr design-declared "$tmp/design-resolve.json" '.parameters.declared == ["design"]'
+jqr design-finding "$tmp/design-resolve.json" '[.findings[] | select(.check == "design-color")] | length > 0'
+
+mv "$tmp/project/.opal/design.json" "$tmp/home/.opal/design.json"
+run_in design-user "$tmp/neutral" 2 "$tmp/design-user.json" audit "$(file_url design.html)" --no-sandbox --pretty
+jqr design-user-source "$tmp/design-user.json" '.sources.designOrigin == "user" and (.sources.design | endswith("/.opal/design.json"))'
+
+run source-command 2 "$tmp/source-command.json" source "$here/source" --source-all --pretty
+jqr source-command-token "$tmp/source-command.json" '[.findings[] | select(.check == "raw-color") | .file] | unique == ["component.tsx"]'
 
 echo "ui-probe tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

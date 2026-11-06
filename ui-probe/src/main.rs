@@ -576,7 +576,7 @@ fn main() {
     }
 }
 
-fn parse_args() -> Result<Args> {
+fn parse_args(argv: Vec<String>) -> Result<Args> {
     let mut url = None;
     let mut source = None;
     let mut wait_for = None;
@@ -603,9 +603,10 @@ fn parse_args() -> Result<Args> {
         .ok()
         .map(PathBuf::from);
 
-    let mut argv = std::env::args().skip(1);
+    let mut argv = argv.into_iter();
     while let Some(arg) = argv.next() {
         match arg.as_str() {
+            "--" => {}
             "--url" => url = Some(argv.next().context("--url needs a value")?),
             "--source" => {
                 source = Some(PathBuf::from(argv.next().context("--source needs a path")?))
@@ -673,7 +674,7 @@ fn parse_args() -> Result<Args> {
             "--pretty" => pretty = true,
             "--help" | "-h" => {
                 println!(
-                    "usage: ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH"
+                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n\nrules resolve from --rules, .opal/rules.json, ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign resolves from --design, .opal/design.json, ~/.opal/design.json."
                 );
                 std::process::exit(0);
             }
@@ -712,10 +713,204 @@ fn parse_args() -> Result<Args> {
 }
 
 fn run() -> Result<i32> {
-    let args = parse_args()?;
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    let command = raw.first().cloned();
+    match command.as_deref() {
+        Some("init") => init_mode(&raw[1..]),
+        Some("pack") => pack_mode(&raw[1..]),
+        Some("audit") => audit_mode(parse_args(audit_arguments(&raw[1..]))?),
+        Some("source") => audit_mode(parse_args(source_arguments(&raw[1..]))?),
+        _ => audit_mode(parse_args(raw)?),
+    }
+}
 
+fn audit_arguments(raw: &[String]) -> Vec<String> {
+    let mut rest = raw.to_vec();
+    let target = take_target(&mut rest);
+    if rest.first().map(String::as_str) == Some("--") {
+        rest.remove(0);
+    }
+    match target {
+        Some(url) => {
+            let mut out = vec!["--url".to_string(), url];
+            out.extend(rest);
+            out
+        }
+        None => rest,
+    }
+}
+
+fn source_arguments(raw: &[String]) -> Vec<String> {
+    let mut rest = raw.to_vec();
+    let target = take_target(&mut rest);
+    if rest.first().map(String::as_str) == Some("--") {
+        rest.remove(0);
+    }
+    let mut out = vec![
+        "--source".to_string(),
+        target.unwrap_or_else(|| ".".to_string()),
+    ];
+    out.extend(rest);
+    out
+}
+
+fn take_target(rest: &mut Vec<String>) -> Option<String> {
+    if rest.first().map(String::as_str) == Some("--") {
+        rest.remove(0);
+    }
+    match rest.first() {
+        Some(first) if !first.starts_with('-') => Some(rest.remove(0)),
+        _ => None,
+    }
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
+fn resolve_design_path(explicit: Option<&str>) -> Option<(PathBuf, &'static str)> {
+    match explicit {
+        Some("auto") => None,
+        Some(path) => Some((PathBuf::from(path), "explicit")),
+        None => {
+            if let Ok(cwd) = std::env::current_dir() {
+                let path = cwd.join(".opal").join("design.json");
+                if path.is_file() {
+                    return Some((path, "project"));
+                }
+            }
+            if let Some(home) = home_dir() {
+                let path = home.join(".opal").join("design.json");
+                if path.is_file() {
+                    return Some((path, "user"));
+                }
+            }
+            None
+        }
+    }
+}
+
+fn resolve_rules_sources(explicit: Option<&Path>) -> Vec<PathBuf> {
+    let mut sources = Vec::new();
+    if let Some(path) = explicit {
+        sources.push(path.to_path_buf());
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        push_source(&mut sources, cwd.join(".opal").join("rules.json"));
+    }
+    if let Some(home) = home_dir() {
+        push_source(&mut sources, home.join(".opal").join("rules.json"));
+    }
+    sources
+}
+
+fn push_source(sources: &mut Vec<PathBuf>, path: PathBuf) {
+    if !path.is_file() {
+        return;
+    }
+    let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+    let duplicate = sources.iter().any(|existing| {
+        std::fs::canonicalize(existing)
+            .map(|entry| entry == canonical)
+            .unwrap_or(false)
+    });
+    if !duplicate {
+        sources.push(path);
+    }
+}
+
+fn init_mode(argv: &[String]) -> Result<i32> {
+    let mut target = PathBuf::from(".");
+    for arg in argv {
+        if arg == "--help" || arg == "-h" {
+            println!("usage: ui-probe init [DIR]");
+            return Ok(0);
+        }
+        if arg.starts_with('-') {
+            anyhow::bail!("unknown argument: {arg}");
+        }
+        target = PathBuf::from(arg);
+    }
+    let config = target.join(".opal");
+    std::fs::create_dir_all(&config).with_context(|| format!("create {}", config.display()))?;
+    let design = config.join("design.json");
+    if design.exists() {
+        println!("kept {}", design.display());
+    } else {
+        std::fs::write(&design, "{}\n").with_context(|| format!("write {}", design.display()))?;
+        println!("created {}", design.display());
+    }
+    let readme = config.join("README.md");
+    if readme.exists() {
+        println!("kept {}", readme.display());
+    } else {
+        std::fs::write(&readme, INIT_README)
+            .with_context(|| format!("write {}", readme.display()))?;
+        println!("created {}", readme.display());
+    }
+    println!(
+        "next: fill {} then run ui-probe audit <url>",
+        design.display()
+    );
+    Ok(0)
+}
+
+const INIT_README: &str = "\
+# opal
+
+- `design.json` holds project design parameters. Every key is optional.
+- `rules.json` is optional. Named rules overlay by id; structural rules append.
+- Rules resolve from `--rules`, `.opal/rules.json`, then `~/.opal/rules.json`.
+- Design resolves from `--design`, `.opal/design.json`, then `~/.opal/design.json`.
+
+Run:
+
+    ui-probe audit http://localhost:3000 --theme both --viewport sweep
+    ui-probe source .
+    ui-probe pack
+";
+
+fn pack_mode(argv: &[String]) -> Result<i32> {
+    let mut explicit = None;
+    let mut argv = argv.iter();
+    while let Some(arg) = argv.next() {
+        match arg.as_str() {
+            "--rules" => {
+                explicit = Some(PathBuf::from(argv.next().context("--rules needs a path")?))
+            }
+            "--help" | "-h" => {
+                println!("usage: ui-probe pack [--rules PATH]");
+                return Ok(0);
+            }
+            other => anyhow::bail!("unknown argument: {other}"),
+        }
+    }
+    let sources = resolve_rules_sources(explicit.as_deref());
+    if sources.is_empty() {
+        anyhow::bail!("no rules pack found; pass --rules or add .opal/rules.json");
+    }
+    for source in &sources {
+        if !source.is_file() {
+            anyhow::bail!("rules file not found: {}", source.display());
+        }
+        println!("{}", source.display());
+    }
+    Ok(0)
+}
+
+fn audit_mode(mut args: Args) -> Result<i32> {
     if let Some(root) = &args.source {
         return source_mode(root, args.pretty, args.source_all);
+    }
+
+    let design_resolution = resolve_design_path(args.design.as_deref());
+    let design_origin = if args.design.as_deref() == Some("auto") {
+        Some("auto")
+    } else {
+        design_resolution.as_ref().map(|(_, origin)| *origin)
+    };
+    if let Some((path, _)) = &design_resolution {
+        args.design = Some(path.display().to_string());
     }
 
     let explicit_design = match args.design.as_deref().filter(|value| *value != "auto") {
@@ -724,18 +919,27 @@ fn run() -> Result<i32> {
     };
     let design_spec = explicit_design.as_ref().map(|(spec, _)| spec);
     let mut rule_notes = Vec::new();
-    let ruleset = match &args.rules {
-        Some(path) => {
-            let (rules, notes) = load_rules(path, design_spec)?;
-            rule_notes = notes;
-            Some(rules)
-        }
-        None => None,
+    let rule_sources = resolve_rules_sources(args.rules.as_deref());
+    let rule_source_labels: Vec<String> = rule_sources
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect();
+    let ruleset = if rule_sources.is_empty() {
+        None
+    } else {
+        let (rules, notes) = load_rules(&rule_sources, design_spec)?;
+        rule_notes = notes;
+        Some(rules)
     };
     let design_notes = explicit_design
         .as_ref()
         .map(|(_, notes)| notes.clone())
         .unwrap_or_default();
+    let design_source = args
+        .design
+        .as_deref()
+        .filter(|value| *value != "auto")
+        .map(str::to_string);
 
     let session = launch_browser(&args)?;
     let browser = &session.browser;
@@ -781,7 +985,15 @@ fn run() -> Result<i32> {
         }
     }
 
-    let mut report = build_report(&args, &runs, both_themes, sweep);
+    let mut report = build_report(
+        &args,
+        &runs,
+        both_themes,
+        sweep,
+        &rule_source_labels,
+        design_source.as_deref(),
+        design_origin,
+    );
     if let Some(path) = write_design_if_needed(&args, runs[0].scrape.inferred.as_ref())? {
         report["designFile"] = json!(path);
     }
@@ -1373,7 +1585,15 @@ fn normalize_findings(findings: &mut [Value], generic: bool) {
     }
 }
 
-fn build_report(args: &Args, runs: &[Run], both_themes: bool, sweep: bool) -> Value {
+fn build_report(
+    args: &Args,
+    runs: &[Run],
+    both_themes: bool,
+    sweep: bool,
+    rule_sources: &[String],
+    design_source: Option<&str>,
+    design_origin: Option<&str>,
+) -> Value {
     let first = &runs[0].scrape;
     let findings = if runs.len() > 1 {
         merge_findings(runs, both_themes, sweep)
@@ -1429,6 +1649,11 @@ fn build_report(args: &Args, runs: &[Run], both_themes: bool, sweep: bool) -> Va
     json!({
         "tool": "ui-probe",
         "version": env!("CARGO_PKG_VERSION"),
+        "sources": {
+            "rules": rule_sources,
+            "design": design_source,
+            "designOrigin": design_origin
+        },
         "state": args.state,
         "theme": args.theme,
         "themes": if both_themes { json!(themes) } else { Value::Null },
@@ -3906,10 +4131,11 @@ fn resolve_params(
     }
 }
 
-fn load_rules(path: &Path, design: Option<&DesignSpec>) -> Result<(RuleSet, Vec<Value>)> {
+fn read_rules(path: &Path) -> Result<Value> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("read rules file {}", path.display()))?;
-    let data: Value = serde_json::from_str(&text).context("parse rules file")?;
+    let data: Value = serde_json::from_str(&text)
+        .with_context(|| format!("parse rules file {}", path.display()))?;
     check_keys(
         &data,
         &["version", "pack", "structural", "rules"],
@@ -3918,6 +4144,46 @@ fn load_rules(path: &Path, design: Option<&DesignSpec>) -> Result<(RuleSet, Vec<
     if data["version"].as_u64() != Some(1) {
         anyhow::bail!("rules: version must be 1");
     }
+    Ok(data)
+}
+
+fn merge_rules(sources: &[PathBuf]) -> Result<Option<Value>> {
+    if sources.is_empty() {
+        return Ok(None);
+    }
+    let mut pack = None;
+    let mut structural = Vec::new();
+    let mut named = Vec::new();
+    let mut seen_ids: HashSet<String> = HashSet::new();
+    for source in sources {
+        let data = read_rules(source)?;
+        if pack.is_none() {
+            pack = data["pack"].as_str().map(str::to_string);
+        }
+        structural.extend(data["structural"].as_array().cloned().unwrap_or_default());
+        for rule in data["rules"].as_array().cloned().unwrap_or_default() {
+            match rule["id"].as_str() {
+                Some(id) if !seen_ids.insert(id.to_string()) => {}
+                _ => named.push(rule),
+            }
+        }
+    }
+    Ok(Some(json!({
+        "version": 1,
+        "pack": pack.unwrap_or_else(|| "custom".to_string()),
+        "structural": structural,
+        "rules": named
+    })))
+}
+
+fn load_rules(sources: &[PathBuf], design: Option<&DesignSpec>) -> Result<(RuleSet, Vec<Value>)> {
+    let Some(data) = merge_rules(sources)? else {
+        anyhow::bail!("rules: no sources");
+    };
+    parse_rules(&data, design)
+}
+
+fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Vec<Value>)> {
     let mut notes = Vec::new();
     let mut selectors: Vec<String> = Vec::new();
     let mut properties: Vec<String> = Vec::new();

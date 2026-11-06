@@ -2,10 +2,14 @@
 
 Rendered and source UI evidence as JSON. Exit codes: `0` clean, `2` findings, `1` error.
 
-## Modes
+## Commands
 
-- `--url <url>` samples a page in headless Chromium.
-- `--source <dir>` scans changed UI files without a browser. `--source-all` scans every UI file.
+- `init [dir]` creates `.opal/design.json` and `.opal/README.md`.
+- `audit <url> [flags]` samples a page in headless Chromium.
+- `source [dir] [flags]` scans changed UI files without a browser. `--source-all` scans every UI file.
+- `pack [--rules <path>]` prints the resolved rules files, one per line, highest precedence first.
+
+The legacy `--url` and `--source` flags remain accepted.
 
 ## Capture
 
@@ -13,13 +17,17 @@ The browser capture records every element, including hidden ones, with `visible`
 
 ## Rules
 
-`--rules <path>` loads a versioned rules pack. Structural rules use CSS property names, `ancestors`/`descendants` constraints, and selector or design-parameter comparisons. Named rules use the registry ids below. Invalid keys, rule ids, properties, selectors, and malformed `param:` references exit `1`.
+Rules resolve from `--rules`, `.opal/rules.json`, then `~/.opal/rules.json`. Every existing file is loaded. Named rules overlay by id: the first source that names an id wins. Structural rules append from every source. The report lists the loaded files under `sources.rules`.
+
+Structural rules use CSS property names, `ancestors`/`descendants` constraints, and selector or design-parameter comparisons. Named rules use the registry ids below. Invalid keys, rule ids, properties, selectors, and malformed `param:` references exit `1`.
 
 Registry ids: `nested-cards`, `kicker-above-heading`, `line-length`, `extreme-negative-tracking`, `gpt-thin-border-wide-shadow`, `side-tab`, `em-dash-overuse`, `marketing-buzzword`, `bounce-easing`.
 
 Every state is evaluated against the pack. A finding carries `state`, `layer`, and, when merged across runs, `states`, `themes`, and `viewports`.
 
 ## Design file
+
+The design source resolves from `--design`, `.opal/design.json`, then `~/.opal/design.json`. The report lists the chosen file under `sources.design` and its origin under `sources.designOrigin`.
 
 `--design <path>` reads the DTCG schema: groups `color`, `font`, `typography`, `spacing`, `radius`, and `surface`, with `$value`, `$type`, `$description`, and `$extensions`. `$type: gradient` tokens are accepted and excluded from colour checks. The earlier flat shape (`colors`, `spacingPx`, `radiiPx`, `fontFamilies`) remains a fallback.
 
