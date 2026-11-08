@@ -34,6 +34,8 @@ const JS: &str = r##"
     return parts.join(" > ");
   };
   const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
   const context = canvas.getContext("2d");
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const paint = (raw) => {
@@ -65,13 +67,23 @@ const JS: &str = r##"
       if (![r, g, b].every((channel) => Number.isFinite(channel))) return null;
     } else {
       const match = /^rgba?\(([^)]+)\)$/.exec(first);
-      if (!match) return null;
-      const parts = match[1].split(/[ ,\/]+/).filter(Boolean).map(Number);
-      if (parts.length < 3 || !parts.slice(0, 3).every((channel) => Number.isFinite(channel))) return null;
-      r = parts[0];
-      g = parts[1];
-      b = parts[2];
-      if (parts.length > 3 && Number.isFinite(parts[3])) a = clamp(parts[3], 0, 1);
+      if (match) {
+        const parts = match[1].split(/[ ,\/]+/).filter(Boolean).map(Number);
+        if (parts.length < 3 || !parts.slice(0, 3).every((channel) => Number.isFinite(channel))) return null;
+        r = parts[0];
+        g = parts[1];
+        b = parts[2];
+        if (parts.length > 3 && Number.isFinite(parts[3])) a = clamp(parts[3], 0, 1);
+      } else {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = value;
+        context.fillRect(0, 0, 1, 1);
+        const pixel = context.getImageData(0, 0, 1, 1).data;
+        r = pixel[0];
+        g = pixel[1];
+        b = pixel[2];
+        a = pixel[3] / 255;
+      }
     }
     r = Math.round(clamp(r, 0, 255) * 1000) / 1000;
     g = Math.round(clamp(g, 0, 255) * 1000) / 1000;
@@ -382,6 +394,7 @@ const JS: &str = r##"
     reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     headings: Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6")).map((h) => h.tagName.toLowerCase()),
     closedShadowSuspects: Array.from(document.querySelectorAll("*")).filter((el) => el.tagName.includes("-") && el.shadowRoot === null).length,
+    frames: document.querySelectorAll("iframe, frame").length,
     pageText: (document.body.innerText || "").slice(0, 1_000_000),
     counts: {
       interactive: candidates.length,
@@ -1473,6 +1486,7 @@ fn doctor_mode(argv: &[String]) -> Result<i32> {
     }
 
     let rule_sources = resolve_rules_sources(rules.as_deref());
+    let rule_sources = expand_rules_sources(&rule_sources)?;
     if rule_sources.is_empty() {
         push_check(&mut checks, &mut ok, "rules", true, "none".to_string());
     } else {
@@ -1614,6 +1628,7 @@ fn pack_mode(argv: &[String]) -> Result<i32> {
         }
     }
     let sources = resolve_rules_sources(explicit.as_deref());
+    let sources = expand_rules_sources(&sources)?;
     if sources.is_empty() {
         anyhow::bail!("no rules pack found; pass --rules or add .opal/rules.json");
     }
@@ -1681,6 +1696,7 @@ fn audit_mode(mut args: Args) -> Result<i32> {
 
     let mut rule_notes = Vec::new();
     let rule_sources = resolve_rules_sources(args.rules.as_deref());
+    let rule_sources = expand_rules_sources(&rule_sources)?;
     let rule_source_labels: Vec<String> = rule_sources
         .iter()
         .map(|(path, _)| path.display().to_string())
@@ -1714,12 +1730,14 @@ fn audit_mode(mut args: Args) -> Result<i32> {
                     scrape: scrape_once(
                         browser,
                         &args,
-                        Some(theme),
-                        *viewport,
-                        ruleset.as_ref(),
-                        design_spec,
-                        &design_notes,
-                        &rule_notes,
+                        ScrapeContext {
+                            theme: Some(theme),
+                            viewport: *viewport,
+                            ruleset: ruleset.as_ref(),
+                            design: design_spec,
+                            design_notes: &design_notes,
+                            rule_notes: &rule_notes,
+                        },
                     )?,
                 });
             }
@@ -1731,12 +1749,14 @@ fn audit_mode(mut args: Args) -> Result<i32> {
                 scrape: scrape_once(
                     browser,
                     &args,
-                    theme.as_deref(),
-                    *viewport,
-                    ruleset.as_ref(),
-                    design_spec,
-                    &design_notes,
-                    &rule_notes,
+                    ScrapeContext {
+                        theme: theme.as_deref(),
+                        viewport: *viewport,
+                        ruleset: ruleset.as_ref(),
+                        design: design_spec,
+                        design_notes: &design_notes,
+                        rule_notes: &rule_notes,
+                    },
                 )?,
             });
         }
@@ -1747,10 +1767,12 @@ fn audit_mode(mut args: Args) -> Result<i32> {
         &runs,
         both_themes,
         sweep,
-        &rule_source_labels,
-        &rule_origins,
-        &design_source_labels,
-        &design_origins,
+        &ReportSources {
+            rules: &rule_source_labels,
+            rule_origins: &rule_origins,
+            design: &design_source_labels,
+            design_origins: &design_origins,
+        },
     );
     if let Some(path) = write_design_if_needed(&args, runs[0].scrape.inferred.as_ref())? {
         report["designFile"] = json!(path);
@@ -1767,11 +1789,12 @@ fn audit_mode(mut args: Args) -> Result<i32> {
     let has_error = report["findings"]
         .as_array()
         .map(|list| {
-            list.iter()
-                .any(|finding| match finding["severity"].as_str() {
-                    Some("P0" | "P1" | "P2" | "error") => true,
-                    _ => false,
-                })
+            list.iter().any(|finding| {
+                matches!(
+                    finding["severity"].as_str(),
+                    Some("P0" | "P1" | "P2" | "error")
+                )
+            })
         })
         .unwrap_or(false);
     Ok(if has_error { 2 } else { 0 })
@@ -2055,16 +2078,22 @@ fn runtime_findings(diagnostics: &PageDiagnostics) -> Vec<Value> {
     findings
 }
 
-fn scrape_once(
-    browser: &Browser,
-    args: &Args,
-    theme: Option<&str>,
+struct ScrapeContext<'a> {
+    theme: Option<&'a str>,
     viewport: (u32, u32),
-    ruleset: Option<&RuleSet>,
-    design: Option<&DesignSpec>,
-    design_notes: &[Value],
-    rule_notes: &[Value],
-) -> Result<Scrape> {
+    ruleset: Option<&'a RuleSet>,
+    design: Option<&'a DesignSpec>,
+    design_notes: &'a [Value],
+    rule_notes: &'a [Value],
+}
+
+fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Result<Scrape> {
+    let theme = context.theme;
+    let viewport = context.viewport;
+    let ruleset = context.ruleset;
+    let design = context.design;
+    let design_notes = context.design_notes;
+    let rule_notes = context.rule_notes;
     let tab = browser.new_tab().context("open tab")?;
     tab.set_default_timeout(args.timeout);
     let diagnostics = Arc::new(Mutex::new(PageDiagnostics::default()));
@@ -2529,15 +2558,19 @@ fn normalize_findings(findings: &mut [Value], generic: bool) {
     }
 }
 
+struct ReportSources<'a> {
+    rules: &'a [String],
+    rule_origins: &'a [String],
+    design: &'a [String],
+    design_origins: &'a [String],
+}
+
 fn build_report(
     args: &Args,
     runs: &[Run],
     both_themes: bool,
     sweep: bool,
-    rule_sources: &[String],
-    rule_origins: &[String],
-    design_sources: &[String],
-    design_origins: &[String],
+    sources: &ReportSources,
 ) -> Value {
     let first = &runs[0].scrape;
     let findings = if runs.len() > 1 {
@@ -2596,10 +2629,10 @@ fn build_report(
         "version": env!("CARGO_PKG_VERSION"),
         "schemaVersion": 1,
         "sources": {
-            "rules": rule_sources,
-            "rulesOrigin": rule_origins,
-            "design": design_sources,
-            "designOrigin": design_origins
+            "rules": sources.rules,
+            "rulesOrigin": sources.rule_origins,
+            "design": sources.design,
+            "designOrigin": sources.design_origins
         },
         "baseline": Value::Null,
         "state": args.state,
@@ -3317,6 +3350,7 @@ fn is_overshooting(value: &str) -> bool {
 }
 
 fn keyframes(text: &str) -> Vec<Value> {
+    let property = Regex::new(r"([a-z-]+)\s*:").unwrap();
     let mut out = Vec::new();
     let mut rest = text;
     while let Some(position) = rest.find("@keyframes") {
@@ -3349,7 +3383,6 @@ fn keyframes(text: &str) -> Vec<Value> {
             continue;
         };
         let body = &after[brace + 1..end];
-        let property = Regex::new(r"([a-z-]+)\s*:").unwrap();
         let mut properties: Vec<String> = Vec::new();
         for captures in property.captures_iter(body) {
             let name = captures[1].to_string();
@@ -4300,7 +4333,7 @@ pub(crate) fn parse_color_rgb(css: &str) -> Option<(i64, i64, i64)> {
                 .collect(),
             _ => return None,
         };
-        let channel = |value: &str| i64::from_str_radix(value, 16).ok().map(|number| number);
+        let channel = |value: &str| i64::from_str_radix(value, 16).ok();
         return Some((
             channel(&pairs[0])?,
             channel(&pairs[1])?,
@@ -4441,7 +4474,7 @@ fn infer_design(baseline: &Value) -> (Value, Vec<Value>) {
             .filter(|(value, _)| **value > 0 && **value % base != 0)
             .map(|(value, count)| (*value, *count))
             .collect();
-        off.sort_by(|left, right| right.1.cmp(&left.1));
+        off.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         for (value, count) in off {
             findings.push(json!({
                 "check": "inferred-spacing",
@@ -4706,14 +4739,8 @@ fn source_suppressions(content: &str) -> (HashMap<usize, HashSet<String>>, HashS
         }
         match scope {
             "file" => file.extend(ids),
-            "next" => lines
-                .entry(index + 2)
-                .or_insert_with(HashSet::new)
-                .extend(ids),
-            _ => lines
-                .entry(index + 1)
-                .or_insert_with(HashSet::new)
-                .extend(ids),
+            "next" => lines.entry(index + 2).or_default().extend(ids),
+            _ => lines.entry(index + 1).or_default().extend(ids),
         }
     }
     (lines, file)
@@ -4848,11 +4875,12 @@ fn source_mode(root: &Path, args: &Args) -> Result<i32> {
     let has_error = report["findings"]
         .as_array()
         .map(|list| {
-            list.iter()
-                .any(|finding| match finding["severity"].as_str() {
-                    Some("P0" | "P1" | "P2" | "error") => true,
-                    _ => false,
-                })
+            list.iter().any(|finding| {
+                matches!(
+                    finding["severity"].as_str(),
+                    Some("P0" | "P1" | "P2" | "error")
+                )
+            })
         })
         .unwrap_or(false);
     Ok(if has_error { 2 } else { 0 })
@@ -5203,13 +5231,90 @@ fn read_rules(path: &Path) -> Result<Value> {
         .with_context(|| format!("parse rules file {}", path.display()))?;
     check_keys(
         &data,
-        &["version", "pack", "structural", "rules"],
+        &[
+            "$schema",
+            "version",
+            "pack",
+            "structural",
+            "rules",
+            "extends",
+        ],
         "rules file",
     )?;
     if data["version"].as_u64() != Some(1) {
         anyhow::bail!("rules: version must be 1");
     }
     Ok(data)
+}
+
+fn extends_paths(path: &Path, data: &Value) -> Result<Vec<PathBuf>> {
+    let mut raw = Vec::new();
+    match &data["extends"] {
+        Value::Null => {}
+        Value::String(value) => raw.push(value.clone()),
+        Value::Array(values) => {
+            for value in values {
+                raw.push(
+                    value
+                        .as_str()
+                        .context("rules: extends must contain strings")?
+                        .to_string(),
+                );
+            }
+        }
+        _ => anyhow::bail!("rules: extends must be a string or an array"),
+    }
+    Ok(raw
+        .into_iter()
+        .map(|value| {
+            let candidate = PathBuf::from(&value);
+            if candidate.is_absolute() {
+                candidate
+            } else {
+                path.parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join(candidate)
+            }
+        })
+        .collect())
+}
+
+fn expand_rules_source(
+    path: &Path,
+    origin: &'static str,
+    out: &mut Vec<(PathBuf, &'static str)>,
+    seen: &mut HashSet<PathBuf>,
+    stack: &mut Vec<PathBuf>,
+) -> Result<()> {
+    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if stack.contains(&canonical) {
+        anyhow::bail!("rules: extends cycle at {}", path.display());
+    }
+    if seen.contains(&canonical) {
+        return Ok(());
+    }
+    let data = read_rules(path)?;
+    let bases = extends_paths(path, &data)?;
+    seen.insert(canonical.clone());
+    out.push((path.to_path_buf(), origin));
+    stack.push(canonical);
+    for base in bases {
+        expand_rules_source(&base, "extended", out, seen, stack)?;
+    }
+    stack.pop();
+    Ok(())
+}
+
+fn expand_rules_sources(
+    sources: &[(PathBuf, &'static str)],
+) -> Result<Vec<(PathBuf, &'static str)>> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    let mut stack = Vec::new();
+    for (path, origin) in sources {
+        expand_rules_source(path, origin, &mut out, &mut seen, &mut stack)?;
+    }
+    Ok(out)
 }
 
 fn merge_rules(sources: &[PathBuf]) -> Result<Option<Value>> {
@@ -5609,6 +5714,9 @@ fn rule_findings(
     sheet_text: &str,
 ) -> Vec<Value> {
     let elements = baseline["elements"].as_array().cloned().unwrap_or_default();
+    let border_length = Regex::new(r"(-?\d*\.?\d+)px").unwrap();
+    let bounce = Regex::new(r"(?i)\b(bounce|elastic)\b").unwrap();
+    let curve = Regex::new(r"cubic-bezier\(([^)]*)\)").unwrap();
     let mut findings = Vec::new();
 
     for rule in &rules.structural {
@@ -5847,7 +5955,6 @@ fn rule_findings(
             }
             "gpt-thin-border-wide-shadow" => {
                 let min_blur = param_f64(&rule.params, "blurPx", 8.0);
-                let length = Regex::new(r"(-?\d*\.?\d+)px").unwrap();
                 for element in elements
                     .iter()
                     .filter(|element| !element_ignored(element, &rule.id))
@@ -5861,7 +5968,7 @@ fn rule_findings(
                     if shadow == "none" || shadow.contains("inset") {
                         continue;
                     }
-                    let blur = length
+                    let blur = border_length
                         .captures_iter(shadow)
                         .filter_map(|c| c[1].parse::<f64>().ok())
                         .nth(2);
@@ -5977,7 +6084,6 @@ fn rule_findings(
                         }
                     }
                 }
-                let bounce = Regex::new(r"(?i)\b(bounce|elastic)\b").unwrap();
                 if bounce.is_match(sheet_text) {
                     push(
                         ":root",
@@ -5986,7 +6092,6 @@ fn rule_findings(
                         json!({"sheet": true}),
                     );
                 }
-                let curve = Regex::new(r"cubic-bezier\(([^)]*)\)").unwrap();
                 for captures in curve.captures_iter(sheet_text) {
                     let value = format!("cubic-bezier({})", &captures[1]);
                     if is_overshooting(&value) {
@@ -6053,8 +6158,8 @@ fn rule_findings(
                     }
                     let last = block
                         .split(['.', '!', '?'])
-                        .filter(|sentence| !sentence.trim().is_empty())
-                        .last()
+                        .rev()
+                        .find(|sentence| !sentence.trim().is_empty())
                         .unwrap_or("")
                         .trim();
                     let words = last.split_whitespace().count();
@@ -6220,6 +6325,24 @@ fn unverified(data: &Value) -> Vec<Value> {
                 "check": "colour",
                 "reason": "background colour conversion failed behind text",
                 "elements": conversions
+            }));
+        }
+    }
+    if let Some(frames) = data["frames"].as_u64() {
+        if frames > 0 {
+            out.push(json!({
+                "check": "frames",
+                "reason": "iframe content is not sampled",
+                "frames": frames
+            }));
+        }
+    }
+    if let Some(closed) = data["closedShadowSuspects"].as_u64() {
+        if closed > 0 {
+            out.push(json!({
+                "check": "shadow-dom",
+                "reason": "closed shadow root content is not sampled",
+                "elements": closed
             }));
         }
     }

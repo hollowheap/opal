@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "pack": "cycle-a",
+  "extends": "./rules-cycle-b.json",
+  "rules": []
+}

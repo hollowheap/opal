@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Modern color fixture</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #ffffff; color: #1a1a1a; font-family: system-ui, sans-serif; }
+      .modern { color: oklch(70% 0.18 30); font-size: 16px; }
+      .mix { color: color-mix(in oklab, #ffffff 55%, #000000); font-size: 16px; }
+      a, button { min-width: 44px; min-height: 44px; padding: 16px 20px; }
+      a:hover, button:hover { background: #f2f2f2; }
+      a:focus-visible, button:focus-visible { outline: 2px solid #1a1a1a; }
+      ::selection { background: #d0d0d0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Modern colors</h1>
+      <p class="modern">This paragraph uses an oklch color that must resolve to rgba.</p>
+      <p class="mix">This paragraph uses a color-mix value that must also resolve.</p>
+      <p><a href="#main">A link</a></p>
+    </main>
+  </body>
+</html>

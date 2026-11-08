@@ -18,7 +18,7 @@ The legacy `--url` and `--source` flags remain accepted.
 
 ## Capture
 
-The browser capture records every element, including hidden ones, with `visible`, `parentIndex`, and a stable `data-ui-probe` marker. Colours are normalized through a canvas `fillStyle` round-trip. A colour that cannot be normalized is listed under `unverified`.
+The browser capture records every element, including hidden ones, with `visible`, `parentIndex`, and a stable `data-ui-probe` marker. Colours are normalized through a canvas `fillStyle` round-trip, so modern syntaxes such as `oklch()` and `color-mix()` resolve to rgba. A colour that cannot be normalized is listed under `unverified`. Iframe and closed-shadow content is not sampled; both are reported under `unverified`.
 
 ## Expanded checks
 
@@ -33,6 +33,8 @@ The probe captures console errors and warnings, uncaught page errors, and failed
 Rules resolve from `--rules`, the nearest `.opal/rules.json` found from the working directory to the git root, then `~/.opal/rules.json`. Every existing file is loaded. Named rules overlay by id: the first source that names an id wins. Structural rules append from every source. The report lists the loaded files under `sources.rules` and tags each rule finding with `ruleSource`.
 
 Structural rules use CSS property names, `ancestors`/`descendants` constraints, and selector or design-parameter comparisons. Named rules use the registry ids below. Invalid keys, rule ids, properties, selectors, and malformed `param:` references exit `1`.
+
+A pack can list `extends` as a path or array of paths. Relative paths resolve from the referring pack. Extended packs load after the pack that names them. Cycles and missing files exit `1`. Packs may carry `$schema: "./rules.schema.json"` for editor validation; the schema lives beside the default pack.
 
 Registry ids: `nested-cards`, `kicker-above-heading`, `line-length`, `extreme-negative-tracking`, `gpt-thin-border-wide-shadow`, `side-tab`, `em-dash-overuse`, `marketing-buzzword`, `bounce-easing`.
 

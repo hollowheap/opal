@@ -1136,18 +1136,17 @@ pub fn checks(data: &Value, design_resolved: bool) -> Vec<Value> {
             && radius >= width.min(height) * 0.5
             && animated
             && infinite
+            && !genuine
         {
-            if !genuine {
-                add(
-                    &mut out,
-                    "pulsing-status-dot",
-                    "P3",
-                    "sheet",
-                    element["selector"].as_str().unwrap_or("?"),
-                    "a small pulsing dot decorates the page without marking live state".to_string(),
-                    json!({ "animation": animation, "duration": duration, "rect": element["rect"] }),
-                );
-            }
+            add(
+                &mut out,
+                "pulsing-status-dot",
+                "P3",
+                "sheet",
+                element["selector"].as_str().unwrap_or("?"),
+                "a small pulsing dot decorates the page without marking live state".to_string(),
+                json!({ "animation": animation, "duration": duration, "rect": element["rect"] }),
+            );
         }
         let lowered = animation.to_lowercase();
         if (lowered.contains("blink")

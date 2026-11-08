@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "pack": "base",
+  "structural": [
+    {
+      "name": "base-border-width",
+      "selector": ".surface",
+      "properties": {
+        "border-width": { "deny": ["1px"] }
+      }
+    }
+  ],
+  "rules": [
+    { "id": "nested-cards", "enabled": true, "severity": "advisory", "layer": "layout" }
+  ]
+}

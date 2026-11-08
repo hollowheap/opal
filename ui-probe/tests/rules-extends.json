@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "pack": "child",
+  "extends": "./rules-base.json",
+  "structural": [
+    {
+      "name": "child-border-style",
+      "selector": ".surface",
+      "properties": {
+        "border-style": { "deny": ["solid"] }
+      }
+    }
+  ],
+  "rules": [
+    { "id": "nested-cards", "enabled": true, "severity": "error", "layer": "layout" }
+  ]
+}

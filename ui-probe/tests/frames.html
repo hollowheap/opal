@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Frames and closed shadow fixture</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #ffffff; color: #1a1a1a; font-family: system-ui, sans-serif; }
+      iframe { width: 200px; height: 80px; border: 1px solid #1a1a1a; }
+      a, button { min-width: 44px; min-height: 44px; padding: 16px 20px; }
+      a:hover, button:hover { background: #f2f2f2; }
+      a:focus-visible, button:focus-visible { outline: 2px solid #1a1a1a; }
+      ::selection { background: #d0d0d0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Frames and closed shadow</h1>
+      <iframe srcdoc="<p>unsampled iframe content</p>"></iframe>
+      <x-closed></x-closed>
+      <p><a href="#main">A link</a></p>
+    </main>
+    <script>
+      customElements.define("x-closed", class extends HTMLElement {
+        constructor() {
+          super();
+          this.attachShadow({ mode: "closed" }).innerHTML = "<p>hidden shadow content</p>";
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ui-probe
+      - run: cargo fmt --manifest-path ui-probe/Cargo.toml --check
+      - run: cargo clippy --manifest-path ui-probe/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path ui-probe/Cargo.toml
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ui-probe
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+      - run: cargo build --manifest-path ui-probe/Cargo.toml
+      - run: UI_PROBE_CHROME="${{ steps.chrome.outputs.chrome-path }}" bash ui-probe/tests/run.sh
+
+  flake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+      - run: nix flake check

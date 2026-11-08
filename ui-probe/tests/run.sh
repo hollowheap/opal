@@ -126,6 +126,14 @@ for check in console-error page-error network-error; do
 done
 jqr diagnostics-layer "$tmp/diagnostics.json" '[.findings[] | select(.check == "page-error") | .layer] | all(. == "runtime")'
 
+run modern-colors 2 "$tmp/modern-colors.json" --url "$(file_url modern-colors.html)" --no-sandbox --pretty
+jqr modern-colors-contrast "$tmp/modern-colors.json" '[.findings[] | select(.check == "contrast") | .evidence.color] | all(startswith("rgba("))'
+jqr modern-colors-unverified "$tmp/modern-colors.json" '.unverified == []'
+
+run frames 0 "$tmp/frames.json" --url "$(file_url frames.html)" --no-sandbox --pretty
+jqr frames-unverified "$tmp/frames.json" '[.unverified[] | select(.check == "frames" and .frames == 1)] | length == 1'
+jqr frames-shadow "$tmp/frames.json" '[.unverified[] | select(.check == "shadow-dom")] | length == 1'
+
 run expanded 2 "$tmp/expanded.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$pack" --pretty
 run expanded-dark 2 "$tmp/expanded-dark.json" --url "$(file_url expanded-dark.html)" --no-sandbox --rules "$pack" --pretty
 run hidden-share 2 "$tmp/hidden-share.json" --url "$(file_url hidden-share.html)" --no-sandbox --pretty
@@ -191,6 +199,19 @@ jqr partial-preserve "$tmp/partial.json" '.color.ink["$value"] == "#1a1a1a"'
 jqr partial-fill "$tmp/partial.json" '.radius["radius-1"] != null'
 
 run params 2 "$tmp/params.json" --url "$design_url" --no-sandbox --design "$dtcg" --rules "$here/rules-params.json" --pretty
+
+run extends 2 "$tmp/extends.json" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-extends.json" --pretty
+jqr extends-named "$tmp/extends.json" '[.findings[] | select(.check == "nested-cards" and .severity == "error")] | length == 2'
+jqr extends-base "$tmp/extends.json" '[.findings[] | select(.check == "base-border-width")] | length == 1'
+jqr extends-child "$tmp/extends.json" '[.findings[] | select(.check == "child-border-style")] | length == 1'
+
+run extends-pack 0 "$tmp/extends-pack.json" pack --rules "$here/rules-extends.json" --json
+jqr extends-pack-sources "$tmp/extends-pack.json" '.sources[0].origin == "explicit" and .sources[1].origin == "extended" and (.sources[1].path | endswith("rules-base.json"))'
+
+run extends-cycle 1 "$tmp/extends-cycle.json" --url "$clean_url" --no-sandbox --rules "$here/rules-cycle-a.json"
+err_has extends-cycle "extends cycle"
+run extends-missing 1 "$tmp/extends-missing.json" --url "$clean_url" --no-sandbox --rules "$here/rules-extends-missing.json"
+err_has extends-missing "read rules file"
 jqr params-missing "$tmp/params.json" '[.unverified[] | select(.check == "line-length" and (.reason | startswith("missing param:")) and .rule == "line-length")] | length == 1'
 
 run dark 2 "$tmp/dark.json" --url "$(file_url dark-only.html)" --no-sandbox --theme both --pretty

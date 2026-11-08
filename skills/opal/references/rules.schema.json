@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hollowheap/opal/rules.schema.json",
+  "title": "ui-probe rules pack",
+  "type": "object",
+  "required": ["version"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "pack": { "type": "string" },
+    "extends": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "structural": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/structural" }
+    },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/named" }
+    }
+  },
+  "$defs": {
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "any": { "type": "string", "minLength": 1 },
+        "none": { "type": "string", "minLength": 1 }
+      }
+    },
+    "property": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "deny": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": ["string", "number"] }
+        },
+        "allowFrom": {
+          "enum": ["colors", "fonts", "spacing", "radii", "typography"]
+        }
+      }
+    },
+    "structural": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "selector"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "selector": { "type": "string", "minLength": 1 },
+        "ancestors": { "$ref": "#/$defs/constraint" },
+        "descendants": { "$ref": "#/$defs/constraint" },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/property" }
+        },
+        "severity": { "enum": ["error", "advisory"] },
+        "layer": { "enum": ["layout", "sheet", "content", "source"] }
+      }
+    },
+    "named": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "enum": [
+            "nested-cards",
+            "kicker-above-heading",
+            "line-length",
+            "extreme-negative-tracking",
+            "gpt-thin-border-wide-shadow",
+            "side-tab",
+            "em-dash-overuse",
+            "marketing-buzzword",
+            "bounce-easing",
+            "rebuttal-cadence",
+            "dismissive-copy"
+          ]
+        },
+        "enabled": { "type": "boolean" },
+        "severity": { "enum": ["error", "advisory"] },
+        "layer": { "enum": ["layout", "sheet", "content", "source"] },
+        "params": { "type": "object" }
+      }
+    }
+  }
+}

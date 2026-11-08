@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "pack": "missing-base",
+  "extends": "./rules-does-not-exist.json",
+  "rules": []
+}
