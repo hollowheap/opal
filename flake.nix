@@ -47,7 +47,7 @@
           inherit ui-probe;
           default = ui-probe;
           rules = pkgs.writeText "opal-rules.json" (
-            builtins.readFile ./skills/opal/references/impeccable-rules.json
+            builtins.readFile ./skills/opal/references/default-rules.json
           );
         }
       );

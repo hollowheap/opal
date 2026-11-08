@@ -12,6 +12,8 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+mod expanded;
+
 const JS: &str = r##"
 (() => {
   const esc = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/[^a-zA-Z0-9_-]/g, "\\$&"));
@@ -223,6 +225,32 @@ const JS: &str = r##"
       && /^[\s$€£¥+\-.,%0-9]+$/.test(directText)
       && (directText.match(/[0-9]/g) || []).length >= 2;
     const heroMetric = numeric && parseFloat(cs.fontSize) >= 40;
+    const lineMetrics = (el) => {
+      const text = (el.innerText || "").trim();
+      if (!text || text.length > 2000) return { lineCount: 0, lastLineWidth: 0, maxLineWidth: 0 };
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 1 && rect.height > 1);
+      const lines = [];
+      for (const rect of rects) {
+        const line = lines.find((entry) => Math.abs(entry.top - rect.top) < Math.max(4, rect.height * 0.5));
+        if (line) {
+          line.left = Math.min(line.left, rect.left);
+          line.right = Math.max(line.right, rect.right);
+        } else {
+          lines.push({ top: rect.top, left: rect.left, right: rect.right });
+        }
+      }
+      const widths = lines.map((line) => Math.max(0, line.right - line.left));
+      return {
+        lineCount: widths.length,
+        lastLineWidth: widths.length > 0 ? widths[widths.length - 1] : 0,
+        maxLineWidth: widths.length > 0 ? Math.max(...widths) : 0
+      };
+    };
+    const metrics = hasText
+      ? lineMetrics(el)
+      : { lineCount: 0, lastLineWidth: 0, maxLineWidth: 0 };
     return {
       index,
       selector: selector(el),
@@ -238,20 +266,30 @@ const JS: &str = r##"
       shadowHost,
       visible: visible(el),
       textTransform: cs.textTransform,
+      textAlign: cs.textAlign,
+      hyphens: cs.hyphens,
+      opacity: parseFloat(cs.opacity),
+      visibility: cs.visibility,
+      display: cs.display,
+      position: cs.position,
+      clipPath: cs.clipPath,
+      zIndex: cs.zIndex,
       caretColor,
       color,
       background: compositedBg(el),
       backgroundColor,
+      backgroundImage: cs.backgroundImage,
+      backgroundSize: cs.backgroundSize,
       fontSize: parseFloat(cs.fontSize) || 0,
       fontWeight: parseInt(cs.fontWeight, 10) || 400,
+      fontStyle: cs.fontStyle,
+      fontFamily: cs.fontFamily,
       padding: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map((v) => parseFloat(v) || 0),
       margin: [cs.marginTop, cs.marginRight, cs.marginBottom, cs.marginLeft].map((v) => parseFloat(v) || 0),
       gap: [cs.rowGap, cs.columnGap].filter((v) => v && v !== "normal").map((v) => parseFloat(v) || 0),
       radius: [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius],
       radiusPx: [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius].map((v) => parseFloat(v) || 0),
-      fontFamily: cs.fontFamily,
       borderColors,
-      backgroundImage: cs.backgroundImage,
       backgroundClip: cs.webkitBackgroundClip || cs.backgroundClip,
       letterSpacing: cs.letterSpacing,
       lineHeight: cs.lineHeight,
@@ -264,12 +302,26 @@ const JS: &str = r##"
       eyebrow,
       iconTile,
       heroMetric,
+      src: tag === "img" ? (el.currentSrc || el.src || null) : null,
+      naturalWidth: tag === "img" ? el.naturalWidth : 0,
+      naturalHeight: tag === "img" ? el.naturalHeight : 0,
+      complete: tag === "img" ? el.complete : null,
+      svgShapes: tag === "svg"
+        ? el.querySelectorAll("path,circle,rect,ellipse,polygon,polyline,line").length
+        : 0,
+      lineCount: metrics.lineCount,
+      lastLineWidth: metrics.lastLineWidth,
+      maxLineWidth: metrics.maxLineWidth,
       borderWidths: [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].map((v) => parseFloat(v) || 0),
       transitionDuration: cs.transitionDuration,
       transitionTimingFunction: cs.transitionTimingFunction,
       animationDuration: cs.animationDuration,
       animationTimingFunction: cs.animationTimingFunction,
       animationName: cs.animationName,
+      animationIterationCount: cs.animationIterationCount,
+      ariaLive: el.getAttribute("aria-live"),
+      ariaBusy: el.getAttribute("aria-busy"),
+      contentEditable: el.getAttribute("contenteditable"),
       focusStyle: {
         outline: [cs.outlineStyle, cs.outlineWidth, cs.outlineColor].join(" "),
         boxShadow: cs.boxShadow,
@@ -2266,6 +2318,7 @@ fn scrape_once(
     }
 
     let mut extra = stylesheet_checks(&baseline, &sheet_text);
+    extra.extend(expanded::checks(&baseline, design.is_some()));
     {
         let diagnostics = diagnostics.lock().unwrap();
         extra.extend(runtime_findings(&diagnostics));
@@ -3137,7 +3190,7 @@ fn motion_declared(baseline: &Value, text: &str) -> bool {
         })
 }
 
-fn visible_elements(data: &Value) -> Vec<Value> {
+pub(crate) fn visible_elements(data: &Value) -> Vec<Value> {
     data["elements"]
         .as_array()
         .cloned()
@@ -4229,7 +4282,7 @@ fn design_checks(
     (findings, notes)
 }
 
-fn parse_color_rgb(css: &str) -> Option<(i64, i64, i64)> {
+pub(crate) fn parse_color_rgb(css: &str) -> Option<(i64, i64, i64)> {
     let css = css.trim().to_lowercase();
     if let Some(hex) = css.strip_prefix('#') {
         let digits = hex.len();
@@ -4950,6 +5003,8 @@ const NAMED_RULES: &[&str] = &[
     "em-dash-overuse",
     "marketing-buzzword",
     "bounce-easing",
+    "rebuttal-cadence",
+    "dismissive-copy",
 ];
 
 const CSS_PROPERTIES: &[&str] = &[
@@ -5944,6 +5999,81 @@ fn rule_findings(
                     }
                 }
             }
+            "dismissive-copy" => {
+                let text = baseline["pageText"].as_str().unwrap_or("");
+                for pattern in rule.params["patterns"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                {
+                    let Some(pattern) = pattern.as_str() else {
+                        continue;
+                    };
+                    let Ok(regex) = Regex::new(&format!("(?i){pattern}")) else {
+                        continue;
+                    };
+                    let count = regex.find_iter(text).count();
+                    if count > 0 {
+                        push(
+                            ":root",
+                            "text",
+                            "copy dismisses a real concern as theater",
+                            json!({"pattern": pattern, "count": count}),
+                        );
+                    }
+                }
+            }
+            "rebuttal-cadence" => {
+                let text = baseline["pageText"].as_str().unwrap_or("");
+                let min_sections = param_u64(&rule.params, "minSections", 3) as usize;
+                let max_words = param_u64(&rule.params, "maxWords", 14) as usize;
+                let patterns: Vec<String> = rule.params["patterns"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_lowercase)
+                    .collect();
+                let blocks: Vec<&str> = if text.contains("\n\n") {
+                    text.split("\n\n").collect()
+                } else {
+                    text.lines().collect()
+                };
+                let mut sections = 0;
+                let mut examples = Vec::new();
+                for block in blocks {
+                    let block = block.trim();
+                    if block.len() < 40 {
+                        continue;
+                    }
+                    let lower = block.to_lowercase();
+                    if !patterns.iter().any(|pattern| lower.contains(pattern)) {
+                        continue;
+                    }
+                    let last = block
+                        .split(['.', '!', '?'])
+                        .filter(|sentence| !sentence.trim().is_empty())
+                        .last()
+                        .unwrap_or("")
+                        .trim();
+                    let words = last.split_whitespace().count();
+                    if words > 0 && words <= max_words {
+                        sections += 1;
+                        if examples.len() < 3 {
+                            examples.push(last.to_string());
+                        }
+                    }
+                }
+                if sections >= min_sections {
+                    push(
+                        ":root",
+                        "text",
+                        "sections land on a short rebuttal sentence",
+                        json!({"sections": sections, "minimum": min_sections, "examples": examples}),
+                    );
+                }
+            }
             _ => {}
         }
     }
@@ -6283,7 +6413,7 @@ fn contrast_ratio(element: &Value) -> Option<f64> {
     Some((lighter + 0.05) / (darker + 0.05))
 }
 
-fn parse_css_color(css: &str) -> Option<(f64, f64, f64, f64)> {
+pub(crate) fn parse_css_color(css: &str) -> Option<(f64, f64, f64, f64)> {
     let css = css.trim();
     let inner = css
         .strip_prefix("rgba(")
@@ -6300,7 +6430,7 @@ fn parse_css_color(css: &str) -> Option<(f64, f64, f64, f64)> {
     Some((parts[0], parts[1], parts[2], *parts.get(3).unwrap_or(&1.0)))
 }
 
-fn luminance(r: f64, g: f64, b: f64) -> f64 {
+pub(crate) fn luminance(r: f64, g: f64, b: f64) -> f64 {
     0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 }
 

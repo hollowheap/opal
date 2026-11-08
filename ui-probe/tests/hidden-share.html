@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hidden text share fixture</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #ffffff; color: #1a1a1a; font-family: system-ui, sans-serif; }
+      .hidden { opacity: 0; }
+      a, button { min-width: 44px; min-height: 44px; padding: 16px 20px; }
+      a:hover, button:hover { background: #f2f2f2; }
+      a:focus-visible, button:focus-visible { outline: 2px solid #1a1a1a; }
+      ::selection { background: #d0d0d0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Hidden text share</h1>
+      <p class="hidden">This first hidden paragraph is long enough to count toward the hidden character share.</p>
+      <p class="hidden">This second hidden paragraph is also long enough to count toward the hidden character share.</p>
+      <p class="hidden">This third hidden paragraph keeps the hidden share above half of all rendered text.</p>
+      <p class="hidden">This fourth hidden paragraph makes the proportion unambiguous for the check.</p>
+      <p><a href="#main">A link</a></p>
+    </main>
+  </body>
+</html>

@@ -108,7 +108,7 @@ clean_url=$(file_url clean.html)
 generic_url=$(file_url generic.html)
 design_url=$(file_url design-drift.html)
 dtcg="$here/design-dtcg.json"
-pack="$root/skills/opal/references/impeccable-rules.json"
+pack="$root/skills/opal/references/default-rules.json"
 
 run clean 0 "$tmp/clean.json" --url "$clean_url" --no-sandbox --pretty
 jqr clean-empty "$tmp/clean.json" '.findings == []'
@@ -125,6 +125,16 @@ for check in console-error page-error network-error; do
   jqr "diagnostics-$check" "$tmp/diagnostics.json" "[.findings[].check] | index(\"$check\") != null"
 done
 jqr diagnostics-layer "$tmp/diagnostics.json" '[.findings[] | select(.check == "page-error") | .layer] | all(. == "runtime")'
+
+run expanded 2 "$tmp/expanded.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$pack" --pretty
+run expanded-dark 2 "$tmp/expanded-dark.json" --url "$(file_url expanded-dark.html)" --no-sandbox --rules "$pack" --pretty
+run hidden-share 2 "$tmp/hidden-share.json" --url "$(file_url hidden-share.html)" --no-sandbox --pretty
+run uniform 2 "$tmp/uniform.json" --url "$(file_url uniform.html)" --no-sandbox --pretty
+run short-tail 0 "$tmp/short-tail.json" --url "$(file_url short-tail.html)" --no-sandbox --pretty
+jq -s '{checks: ([.[].findings[].check] | unique)}'   "$tmp/expanded.json" "$tmp/expanded-dark.json" "$tmp/hidden-share.json" "$tmp/uniform.json" "$tmp/short-tail.json"   >"$tmp/expanded-checks.json"
+for check in   accent-border-rounded continuous-scroller clipped-escape-child colored-halo-shadow   tight-container-inset cream-canvas decorative-blinking-caret dismissive-copy   opening-column-overrun compressed-type-scale washed-grey-on-tint grid-line-background   unblurred-offset-shadow heading-spacing-relation hidden-text-share image-source-missing   irregular-clip-path justified-narrow-text literal-uppercase-passage numeric-section-index   oversized-headline oversized-italic-serif pill-eyebrow-label pulsing-status-dot   radial-background-wash radial-spotlight rebuttal-cadence reflex-font-choice   repeated-container-copy repeating-stripe-surface row-elevation-conflict scroller-edge-flush   primitive-svg-scene short-heading-tail short-last-line sibling-text-collision   sub-12px-body synthetic-purple-palette overlapping-copy tight-line-height   sub-11px-control-text uniform-spacing viewport-edge-text washed-out-image excess-letter-spacing; do
+  jqr "expanded-$check" "$tmp/expanded-checks.json" ".checks | index(\"$check\") != null"
+done
 
 run disclosure 2 "$tmp/disclosure.json" --url "$(file_url disclosure.html)" --no-sandbox --expand --pretty
 jqr disclosure-expanded "$tmp/disclosure.json" '.states.expanded | length == 1'
@@ -157,7 +167,7 @@ run allowed 0 "$tmp/allowed.json" --url "$(file_url gradient-text.html)" --no-sa
 jqr allowed-filter "$tmp/allowed.json" '[.findings[].check] | index("no-gradient-text") == null'
 
 cd "$tmp"
-run auto 0 "$tmp/auto.json" --url "$design_url" --no-sandbox --design auto --pretty
+run auto 0 "$tmp/auto.json" --url "$design_url" --no-sandbox --design auto --allow uniform-spacing,tight-container-inset,washed-grey-on-tint --pretty
 jqr auto-report "$tmp/auto.json" '.designFile == ".ui-witness/design.json" and .inferredDesign.palette[0].count != null and .inferredDesign.palette[0].confidence != null'
 jqr auto-file "$tmp/.ui-witness/design.json" '.color["color-1"] and .font["font-1"] and .typography["type-1"]'
 jqr auto-file-descriptions "$tmp/.ui-witness/design.json" '[.. | objects | select(has("$description")) | .["$description"]] | length > 0 and all(.[]; test("^Inferred .+, [0-9]+ observations$"))'
@@ -166,11 +176,11 @@ jqr auto-file-statistics "$tmp/.ui-witness/design.json" '[paths | select(.[-1] =
 run auto-existing 1 "$tmp/auto-existing.json" --url "$design_url" --no-sandbox --design auto
 err_has auto-existing "design file already exists"
 
-run auto-force 0 "$tmp/auto-force.json" --url "$design_url" --no-sandbox --design auto --force
+run auto-force 0 "$tmp/auto-force.json" --url "$design_url" --no-sandbox --design auto --allow uniform-spacing,tight-container-inset,washed-grey-on-tint --force
 
 jq '.color = {"color-1": {"$value": "#000000", "$type": "color"}}' "$tmp/.ui-witness/design.json" >"$tmp/design-merge.json"
 mv "$tmp/design-merge.json" "$tmp/.ui-witness/design.json"
-run infer-missing 0 "$tmp/infer-missing.json" --url "$design_url" --no-sandbox --design auto --infer-missing
+run infer-missing 0 "$tmp/infer-missing.json" --url "$design_url" --no-sandbox --design auto --allow uniform-spacing,tight-container-inset,washed-grey-on-tint --infer-missing
 jqr infer-missing-preserve "$tmp/.ui-witness/design.json" '.color["color-1"]["$value"] == "#000000"'
 jqr infer-missing-fill "$tmp/.ui-witness/design.json" '.font["font-1"] != null and .radius["radius-1"] != null'
 cd "$root"

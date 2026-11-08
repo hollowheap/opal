@@ -6,7 +6,7 @@ UI craft skill: DTCG design tokens, wireframing, and rendered audits with `ui-pr
 
 - `skills/opal/SKILL.md` — the skill.
 - `scripts/compile.sh` — build `ui-probe` into `~/.opal/bin` and install the default rules pack to `~/.opal/rules.json`.
-- `skills/opal/references/impeccable-rules.json` — default advisory rules pack.
+- `skills/opal/references/default-rules.json` — default advisory rules pack.
 - `ui-probe/` — Rust capture and audit binary.
 
 ## Use

@@ -47,7 +47,7 @@ Read `artifacts/ui-design.md` when present; use its tokens, density, typography,
 
 Run `~/.opal/bin/ui-probe source .` for source patterns in changed UI files before reading the diff. Treat matches as evidence, not findings; verify each match in context.
 
-Run `~/.opal/bin/ui-probe audit <url> [flags]` before judging. A rendered review without a probe run is incomplete. The probe renders desktop and mobile viewports in light and dark themes and samples hover and focus states; it reports findings derived from rendered geometry and computed colors, plus a candidate list and tab order, as JSON. Use `--expand` to open each ARIA disclosure one at a time and report per-state deltas. Read the report for thresholds and evidence. Without the tool or a browser, inspect supplied screenshots and list every unrendered check under unverified.
+Run `~/.opal/bin/ui-probe audit <url> [flags]` before judging. A rendered review without a probe run is incomplete. The probe renders desktop and mobile viewports in light and dark themes and samples hover and focus states; it reports findings derived from rendered geometry and computed colors, plus a candidate list and tab order, as JSON. Page-health, geometry, material, typography, and motion advisories carry measured evidence; treat them as review prompts, not bans. Use `--expand` to open each ARIA disclosure one at a time and report per-state deltas. Read the report for thresholds and evidence. Without the tool or a browser, inspect supplied screenshots and list every unrendered check under unverified.
 
 Exercise preload, loaded, empty, error, disabled, collapsed, and expanded; snapshot only the states the diff touches.
 

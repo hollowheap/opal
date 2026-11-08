@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Expanded material fixture</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #0b0b12; color: #eaeaea; font-family: "Space Grotesk", system-ui, sans-serif; }
+      h1, h2, p { margin: 0 0 16px; }
+      .wash { height: 240px; background-image: radial-gradient(circle at 50% 30%, #b026ff, transparent 60%), radial-gradient(circle at 70% 60%, #00e5ff, transparent 55%); }
+      .spotlight { height: 200px; background-image: radial-gradient(circle at 50% 50%, #ff2bd6, transparent 65%); }
+      .halo { padding: 24px; box-shadow: 0 0 32px #b026ff; }
+      .chip { display: inline-block; border-radius: 999px; background: #00e5ff; color: #0b0b12; padding: 6px 12px; font-size: 12px; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: #00ff88; animation: pulse 1s ease-in-out infinite; }
+      @keyframes pulse { 50% { opacity: .3; } }
+      .caret { width: 2px; height: 22px; background: #eaeaea; animation: blink 1s steps(1) infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
+      .ticker { animation: ticker 2s linear infinite; overflow: hidden; width: 160px; }
+      @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    </style>
+  </head>
+  <body>
+    <div class="wash"></div>
+    <div class="spotlight"></div>
+    <div class="halo">A chromatic halo wraps this panel on a dark ground.</div>
+    <span class="chip">New</span><h1>Neon hero</h1>
+    <p>Purple and cyan on dark make the palette feel synthetic.</p>
+    <p>Another body line keeps the reflex face dominant across the page.</p>
+    <p>A third body line keeps the reflex face dominant across the page.</p>
+    <div class="dot"></div>
+    <div class="caret"></div>
+    <div class="ticker">scrolling content</div>
+  </body>
+</html>

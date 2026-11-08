@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "pack": "impeccable",
+  "pack": "opal-default",
   "structural": [
     {
       "name": "no-gradient-text",
@@ -86,10 +86,22 @@
           "streamline",
           "empower",
           "world-class",
+          "enterprise-grade",
+          "next-generation",
+          "cutting-edge",
+          "best-in-class",
+          "mission-critical",
+          "game-changing",
+          "revolutionary",
+          "transformative",
+          "ai-powered",
           "seamless",
           "leverage",
           "elevate",
-          "unlock"
+          "unlock",
+          "synergy",
+          "disrupt",
+          "paradigm shift"
         ]
       }
     },
@@ -99,6 +111,37 @@
       "severity": "advisory",
       "layer": "sheet",
       "params": {}
+    },
+    {
+      "id": "rebuttal-cadence",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "content",
+      "params": {
+        "minSections": 3,
+        "maxWords": 14,
+        "patterns": [
+          "but ",
+          "yet ",
+          "however",
+          "instead",
+          "not ",
+          "no ",
+          "except"
+        ]
+      }
+    },
+    {
+      "id": "dismissive-copy",
+      "enabled": true,
+      "severity": "advisory",
+      "layer": "content",
+      "params": {
+        "patterns": [
+          "\\btheater\\b",
+          "\\btheatre\\b"
+        ]
+      }
     }
   ]
 }

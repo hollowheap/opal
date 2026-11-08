@@ -20,6 +20,10 @@ The legacy `--url` and `--source` flags remain accepted.
 
 The browser capture records every element, including hidden ones, with `visible`, `parentIndex`, and a stable `data-ui-probe` marker. Colours are normalized through a canvas `fillStyle` round-trip. A colour that cannot be normalized is listed under `unverified`.
 
+## Expanded checks
+
+The engine also runs fixed advisory checks for page health, geometry, material, typography, motion, and content cadence. Findings carry the measured values in `evidence`. Use `--allow`, inline suppressions, or a baseline to settle an accepted pattern.
+
 ## Runtime diagnostics
 
 The probe captures console errors and warnings, uncaught page errors, and failed or 4xx/5xx network requests as `console-error`, `console-warning`, `page-error`, and `network-error` findings. Capture waits for fonts and images. `--freeze-animations` disables animations and transitions before sampling.

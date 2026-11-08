@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Expanded rule fixture</title>
+    <style>
+      body { margin: 0; padding: 0; background: #f5ead6; color: #1a1a1a; font-family: Inter, system-ui, sans-serif; }
+      h1, h2, h3, p { margin: 0 0 10px; }
+      .edge { width: 100%; }
+      .accent { width: 200px; height: 60px; border: 4px solid #ff00aa; border-radius: 12px; padding: 4px; }
+      .row { display: flex; gap: 16px; margin: 24px 0; }
+      .card { width: 180px; height: 100px; border: 1px solid #1a1a1a; background: #ffffff; box-shadow: 0 8px 24px rgba(0,0,0,.2); padding: 4px; }
+      .scroller { display: flex; gap: 16px; overflow-x: auto; width: 300px; padding-right: 24px; }
+      .scroller .card { flex: 0 0 160px; }
+      .overlap { position: relative; height: 60px; }
+      .overlap span { position: absolute; left: 0; top: 0; background: #f5ead6; }
+      .overlap span:last-child { left: 10px; }
+      .col { display: flex; gap: 24px; }
+      .col > div { width: 45%; }
+      .tall { height: 2000px; }
+      .short-col { height: 100px; }
+      .clipped { overflow: hidden; width: 120px; height: 60px; position: relative; }
+      .clipped .esc { position: absolute; left: 100px; width: 80px; height: 40px; background: #ffff00; }
+      .oversized { font-size: 64px; line-height: 1.1; }
+      .tight { line-height: 1.1; font-size: 16px; width: 400px; }
+      .justify { text-align: justify; width: 300px; }
+      .tail { width: 240px; }
+      .small { font-size: 11px; }
+      .tiny { font-size: 9px; }
+      .tracking { letter-spacing: 0.08em; font-size: 16px; }
+      .repeat { border: 1px solid #1a1a1a; background: #ffffff; padding: 16px; }
+      .italic { font-style: italic; font-family: Georgia, serif; font-size: 48px; }
+      .pill { display: inline-block; border-radius: 999px; background: #0055ff; color: #fff; padding: 4px 8px; font-size: 12px; }
+      .flat h2 { font-size: 18px; }
+      .flat p { font-size: 16px; }
+      .collide { position: relative; height: 40px; }
+      .collide span { position: absolute; }
+      .collide span:first-child { left: 0; }
+      .collide span:last-child { left: 20px; }
+      .heading { margin-top: 20px; margin-bottom: 20px; }
+      .grid { background-image: linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg,#000 1px, transparent 1px); background-size: 20px 20px; height: 100px; }
+      .stripes { background-image: repeating-linear-gradient(45deg,#000 0 2px,transparent 2px 8px); height: 80px; }
+      .clip { clip-path: polygon(0 0, 20% 10%, 40% 0, 60% 20%, 80% 0, 100% 30%, 90% 60%, 100% 100%, 0 100%); width: 100px; height: 100px; background: #cccccc; }
+      .washed { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Crect width='10' height='10' fill='%230055ff'/%3E%3C/svg%3E"); background-color: rgba(255,255,255,.95); width: 100px; height: 100px; }
+      .hard { box-shadow: 6px 6px 0 #000000; }
+      .grey { color: #888888; background: #ffcc00; }
+      .shape { width: 360px; height: 220px; }
+      .ticker { animation: ticker 2s linear infinite; overflow: hidden; width: 100px; }
+      @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+      .pulse { width: 10px; height: 10px; border-radius: 50%; background: #00ff00; animation: pulse 1s ease-in-out infinite; }
+      @keyframes pulse { 50% { opacity: .3; } }
+      .caret { width: 2px; height: 20px; background: #000000; animation: blink 1s steps(1) infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
+      .hidden { opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="caret"></div>
+    <h1 class="oversized">A full sentence headline that should not dominate the viewport at display size</h1>
+    <p class="edge">Body copy sits flush against the viewport edge with no padding around it and enough words to count as a paragraph.</p>
+    <div class="accent">accent</div>
+    <div class="row"><div class="card">one</div><div class="card">two</div></div>
+    <img src="" alt="Broken probe image" />
+    <div class="scroller"><div class="card">a</div><div class="card">b</div><div class="card">c</div></div>
+    <div class="overlap"><span>overlapping text one</span><span>overlapping text two</span></div>
+    <div class="col"><div class="tall">tall column</div><div class="short-col">short column</div></div>
+    <div class="clipped"><div class="esc">escape</div></div>
+    <p class="tight">Tight leading paragraph with enough words to wrap over multiple lines and show the line height problem clearly.</p>
+    <p class="justify">Justified narrow paragraph with enough words to wrap over several lines without any hyphenation support at all.</p>
+    <p class="tail">This paragraph is wide enough to wrap and leave a single final word straggling on its own line here.</p>
+    <h2 class="heading">A heading that wraps with a much shorter last line than the one above it</h2>
+    <p class="small">Small body text below twelve pixels should be flagged by the generic floor.</p>
+    <p class="tiny">Tiny body copy below ten pixels is below the legal smallprint floor.</p>
+    <p class="tracking">Wide tracking body text with enough characters to trigger the check.</p>
+    <div class="repeat"><p>Repeated copy</p><p>Repeated copy</p><p>Repeated copy</p></div>
+    <div><span style="font-size: 11px">1</span><h3>Section one</h3><span style="font-size: 11px">2</span><h3>Section two</h3></div>
+    <h1 class="italic">Oversized italic serif headline</h1>
+    <p>THIS IS A LONG LITERAL UPPERCASE PASSAGE THAT EXCEEDS EIGHTY CHARACTERS AND SHOULD BE FLAGGED BY THE ENGINE.</p>
+    <span class="pill">New</span><h2>Pill eyebrow</h2>
+    <div class="flat"><h2>Flat scale heading</h2><p>Flat scale body copy.</p></div>
+    <div class="collide"><span>collision one</span><span>collision two</span></div>
+    <div class="grid"></div>
+    <div class="stripes"></div>
+    <div class="clip"></div>
+    <div class="washed"></div>
+    <div class="hard">hard shadow</div>
+    <div class="grey">grey on color</div>
+    <svg class="shape" viewBox="0 0 360 220">
+      <rect x="1" y="1" width="20" height="20" />
+      <circle cx="40" cy="40" r="10" />
+      <path d="M10 10 L20 20" />
+      <ellipse cx="60" cy="60" rx="10" ry="5" />
+      <polygon points="0,0 10,10 20,0" />
+      <polyline points="0,0 10,10 20,0" />
+      <line x1="0" y1="0" x2="10" y2="10" />
+      <rect x="30" y="30" width="10" height="10" />
+      <circle cx="80" cy="80" r="10" />
+      <path d="M30 30 L40 40" />
+      <ellipse cx="90" cy="90" rx="10" ry="5" />
+      <polygon points="0,0 10,10 20,0" />
+    </svg>
+    <div class="pulse"></div>
+    <div class="caret"></div>
+    <div class="ticker">scrolling content</div>
+    <section><h2>First claim</h2><p>Long section copy that sets up a claim and then ends with a short rebuttal. But no.</p></section>
+    <section><h2>Second claim</h2><p>Another long section copy that sets up a claim and then ends with a short rebuttal. Yet no.</p></section>
+    <section><h2>Third claim</h2><p>A third long section copy that sets up a claim and then ends with a short rebuttal. However no.</p></section>
+    <p>The theater framing dismisses a real concern.</p>
+    <div class="hidden">Hidden text block that should count toward the hidden share because it remains invisible after load and is fairly long.</div>
+  </body>
+</html>
