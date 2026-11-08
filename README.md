@@ -20,7 +20,7 @@ opal/scripts/compile.sh
 ~/.opal/bin/ui-probe source .
 ```
 
-`init` creates `.opal/design.json` and `.opal/README.md`. Rules resolve from `--rules`, `.opal/rules.json`, then `~/.opal/rules.json`; named rules overlay by id and structural rules append. Design resolves from `--design`, `.opal/design.json`, then `~/.opal/design.json`. The report lists the resolved files under `sources`. `pack` prints the resolved rules files.
+`init` creates `.opal/design.json` and `.opal/README.md`. Rules resolve from `--rules`, the nearest `.opal/rules.json`, then `~/.opal/rules.json`; named rules overlay by id and structural rules append. Design layers from `--design`, the nearest `.opal/design.json`, then `~/.opal/design.json`. The report lists the resolved files under `sources` and tags rule findings with `ruleSource`. `pack` prints the resolved rules files; `pack --json` includes their origins.
 
 Requires Chromium. `ui-probe` resolves it from `--chrome`, `UI_PROBE_CHROME`, or `PATH`.
 

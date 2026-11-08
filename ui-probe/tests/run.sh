@@ -259,10 +259,26 @@ jqr overlay-named-override "$tmp/overlay.json" '[.findings[] | select(.check == 
 jqr overlay-project-structural "$tmp/overlay.json" '[.findings[] | select(.check == "project-border-width")] | length == 1'
 jqr overlay-user-structural "$tmp/overlay.json" '[.findings[] | select(.check == "user-border-style")] | length == 1'
 jqr overlay-sources "$tmp/overlay.json" '.sources.rules | length == 2 and (.[0] | endswith("/.opal/rules.json")) and (.[1] | endswith("/.opal/rules.json"))'
-jqr overlay-design-source "$tmp/overlay.json" '(.sources.design | endswith("/.opal/design.json")) and .sources.designOrigin == "project"'
+jqr overlay-rule-origins "$tmp/overlay.json" '.sources.rulesOrigin == ["project", "user"]'
+jqr overlay-schema "$tmp/overlay.json" '.schemaVersion == 1'
+jqr overlay-design-source "$tmp/overlay.json" '(.sources.design | length == 1) and (.sources.design[0] | endswith("/.opal/design.json")) and (.sources.designOrigin == ["project"])'
+jqr overlay-rule-source-project "$tmp/overlay.json" "[.findings[] | select(.check == \"project-border-width\") | .ruleSource] | all(contains(\"$tmp/project\"))"
+jqr overlay-rule-source-user "$tmp/overlay.json" "[.findings[] | select(.check == \"user-border-style\") | .ruleSource] | all(contains(\"$tmp/home\"))"
+jqr overlay-named-source "$tmp/overlay.json" "[.findings[] | select(.check == \"nested-cards\") | .ruleSource] | all(contains(\"$tmp/project\"))"
 
 run_in audit-separator "$tmp/project" 2 "$tmp/audit-separator.json" audit -- "$(file_url cards.html)" --no-sandbox --pretty
 jqr audit-separator-sources "$tmp/audit-separator.json" '.sources.rules | length == 2'
+
+run_in pack-json "$tmp/project" 0 "$tmp/pack.json" pack --json
+jqr pack-json-sources "$tmp/pack.json" '.sources | length == 2 and .[0].origin == "project" and (.[0].path | endswith("/.opal/rules.json")) and .[1].origin == "user"'
+
+mkdir -p "$tmp/project/app/src"
+run_in pack-walk "$tmp/project/app/src" 0 "$tmp/pack-walk.out" pack
+if [ "$(sed -n '1p' "$tmp/pack-walk.out")" = "$tmp/project/.opal/rules.json" ]; then
+  ok
+else
+  bad "pack from a nested directory did not find the project rules file"
+fi
 
 cat >"$tmp/project/.opal/design.json" <<'EOF'
 {
@@ -271,17 +287,32 @@ cat >"$tmp/project/.opal/design.json" <<'EOF'
   }
 }
 EOF
+cat >"$tmp/home/.opal/design.json" <<'EOF'
+{
+  "color": {
+    "paper": { "$value": "#ffffff", "$type": "color" }
+  }
+}
+EOF
 run_in design-resolve "$tmp/project" 2 "$tmp/design-resolve.json" audit "$(file_url design.html)" --no-sandbox --pretty
-jqr design-source "$tmp/design-resolve.json" '(.sources.design | endswith("/.opal/design.json")) and .sources.designOrigin == "project"'
+jqr design-source "$tmp/design-resolve.json" '(.sources.design | length == 2) and (.sources.design[0] | endswith("/.opal/design.json")) and (.sources.designOrigin == ["project", "user"])'
 jqr design-declared "$tmp/design-resolve.json" '.parameters.declared == ["design"]'
-jqr design-finding "$tmp/design-resolve.json" '[.findings[] | select(.check == "design-color")] | length > 0'
+jqr design-merge-ink "$tmp/design-resolve.json" '[.findings[] | select(.check == "design-color" and .evidence.value == "rgba(26, 26, 26, 1)")] | length == 0'
+jqr design-merge-paper "$tmp/design-resolve.json" '[.findings[] | select(.check == "design-color" and .evidence.value == "rgba(255, 255, 255, 1)")] | length == 0'
+jqr design-merge-drift "$tmp/design-resolve.json" '[.findings[] | select(.check == "design-color" and .evidence.value == "rgba(204, 0, 0, 1)")] | length == 1'
 
-mv "$tmp/project/.opal/design.json" "$tmp/home/.opal/design.json"
+run_in design-walk "$tmp/project/app/src" 2 "$tmp/design-walk.json" audit "$(file_url design.html)" --no-sandbox --pretty
+jqr design-walk-source "$tmp/design-walk.json" '(.sources.design | length == 2) and (.sources.design[0] | endswith("/.opal/design.json")) and (.sources.designOrigin == ["project", "user"])'
+
 run_in design-user "$tmp/neutral" 2 "$tmp/design-user.json" audit "$(file_url design.html)" --no-sandbox --pretty
-jqr design-user-source "$tmp/design-user.json" '.sources.designOrigin == "user" and (.sources.design | endswith("/.opal/design.json"))'
+jqr design-user-source "$tmp/design-user.json" '(.sources.designOrigin == ["user"]) and (.sources.design | length == 1) and (.sources.design[0] | endswith("/.opal/design.json"))'
+
+run_in design-explicit "$tmp/neutral" 2 "$tmp/design-explicit.json" audit "$(file_url design.html)" --no-sandbox --design "$dtcg" --pretty
+jqr design-explicit-source "$tmp/design-explicit.json" '.sources.designOrigin == ["explicit", "user"] and (.sources.design | length == 2)'
 
 run source-command 2 "$tmp/source-command.json" source "$here/source" --source-all --pretty
 jqr source-command-token "$tmp/source-command.json" '[.findings[] | select(.check == "raw-color") | .file] | unique == ["component.tsx"]'
+jqr source-command-schema "$tmp/source-command.json" '.schemaVersion == 1'
 
 echo "ui-probe tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

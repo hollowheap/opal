@@ -674,7 +674,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
             "--pretty" => pretty = true,
             "--help" | "-h" => {
                 println!(
-                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n\nrules resolve from --rules, .opal/rules.json, ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign resolves from --design, .opal/design.json, ~/.opal/design.json."
+                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH] [--json]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
                 );
                 std::process::exit(0);
             }
@@ -768,54 +768,67 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-fn resolve_design_path(explicit: Option<&str>) -> Option<(PathBuf, &'static str)> {
-    match explicit {
-        Some("auto") => None,
-        Some(path) => Some((PathBuf::from(path), "explicit")),
-        None => {
-            if let Ok(cwd) = std::env::current_dir() {
-                let path = cwd.join(".opal").join("design.json");
-                if path.is_file() {
-                    return Some((path, "project"));
-                }
-            }
-            if let Some(home) = home_dir() {
-                let path = home.join(".opal").join("design.json");
-                if path.is_file() {
-                    return Some((path, "user"));
-                }
-            }
-            None
+fn project_config_dir(start: &Path) -> Option<PathBuf> {
+    let mut current = Some(start);
+    while let Some(dir) = current {
+        let config = dir.join(".opal");
+        if config.is_dir() {
+            return Some(config);
         }
+        if dir.join(".git").exists() {
+            break;
+        }
+        current = dir.parent();
     }
+    None
 }
 
-fn resolve_rules_sources(explicit: Option<&Path>) -> Vec<PathBuf> {
+fn resolve_design_sources(explicit: Option<&str>) -> Vec<(PathBuf, &'static str)> {
     let mut sources = Vec::new();
-    if let Some(path) = explicit {
-        sources.push(path.to_path_buf());
+    match explicit {
+        Some("auto") => return sources,
+        Some(path) => sources.push((PathBuf::from(path), "explicit")),
+        None => {}
     }
     if let Ok(cwd) = std::env::current_dir() {
-        push_source(&mut sources, cwd.join(".opal").join("rules.json"));
+        if let Some(config) = project_config_dir(&cwd) {
+            push_source(&mut sources, config.join("design.json"), "project");
+        }
     }
     if let Some(home) = home_dir() {
-        push_source(&mut sources, home.join(".opal").join("rules.json"));
+        push_source(&mut sources, home.join(".opal").join("design.json"), "user");
     }
     sources
 }
 
-fn push_source(sources: &mut Vec<PathBuf>, path: PathBuf) {
+fn resolve_rules_sources(explicit: Option<&Path>) -> Vec<(PathBuf, &'static str)> {
+    let mut sources = Vec::new();
+    if let Some(path) = explicit {
+        sources.push((path.to_path_buf(), "explicit"));
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(config) = project_config_dir(&cwd) {
+            push_source(&mut sources, config.join("rules.json"), "project");
+        }
+    }
+    if let Some(home) = home_dir() {
+        push_source(&mut sources, home.join(".opal").join("rules.json"), "user");
+    }
+    sources
+}
+
+fn push_source(sources: &mut Vec<(PathBuf, &'static str)>, path: PathBuf, origin: &'static str) {
     if !path.is_file() {
         return;
     }
     let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-    let duplicate = sources.iter().any(|existing| {
+    let duplicate = sources.iter().any(|(existing, _)| {
         std::fs::canonicalize(existing)
             .map(|entry| entry == canonical)
             .unwrap_or(false)
     });
     if !duplicate {
-        sources.push(path);
+        sources.push((path, origin));
     }
 }
 
@@ -860,8 +873,8 @@ const INIT_README: &str = "\
 
 - `design.json` holds project design parameters. Every key is optional.
 - `rules.json` is optional. Named rules overlay by id; structural rules append.
-- Rules resolve from `--rules`, `.opal/rules.json`, then `~/.opal/rules.json`.
-- Design resolves from `--design`, `.opal/design.json`, then `~/.opal/design.json`.
+- Rules resolve from `--rules`, the nearest `.opal/rules.json`, then `~/.opal/rules.json`.
+- Design layers from `--design`, the nearest `.opal/design.json`, then `~/.opal/design.json`.
 
 Run:
 
@@ -872,14 +885,16 @@ Run:
 
 fn pack_mode(argv: &[String]) -> Result<i32> {
     let mut explicit = None;
+    let mut json_output = false;
     let mut argv = argv.iter();
     while let Some(arg) = argv.next() {
         match arg.as_str() {
             "--rules" => {
                 explicit = Some(PathBuf::from(argv.next().context("--rules needs a path")?))
             }
+            "--json" => json_output = true,
             "--help" | "-h" => {
-                println!("usage: ui-probe pack [--rules PATH]");
+                println!("usage: ui-probe pack [--rules PATH] [--json]");
                 return Ok(0);
             }
             other => anyhow::bail!("unknown argument: {other}"),
@@ -889,11 +904,21 @@ fn pack_mode(argv: &[String]) -> Result<i32> {
     if sources.is_empty() {
         anyhow::bail!("no rules pack found; pass --rules or add .opal/rules.json");
     }
-    for source in &sources {
+    for (source, _) in &sources {
         if !source.is_file() {
             anyhow::bail!("rules file not found: {}", source.display());
         }
-        println!("{}", source.display());
+    }
+    if json_output {
+        let entries: Vec<Value> = sources
+            .iter()
+            .map(|(path, origin)| json!({ "path": path.display().to_string(), "origin": origin }))
+            .collect();
+        println!("{}", serde_json::to_string(&json!({ "sources": entries }))?);
+    } else {
+        for (source, _) in &sources {
+            println!("{}", source.display());
+        }
     }
     Ok(0)
 }
@@ -903,43 +928,51 @@ fn audit_mode(mut args: Args) -> Result<i32> {
         return source_mode(root, args.pretty, args.source_all);
     }
 
-    let design_resolution = resolve_design_path(args.design.as_deref());
-    let design_origin = if args.design.as_deref() == Some("auto") {
-        Some("auto")
+    let design_sources = resolve_design_sources(args.design.as_deref());
+    let design_origins: Vec<String> = if args.design.as_deref() == Some("auto") {
+        vec!["auto".to_string()]
     } else {
-        design_resolution.as_ref().map(|(_, origin)| *origin)
+        design_sources
+            .iter()
+            .map(|(_, origin)| (*origin).to_string())
+            .collect()
     };
-    if let Some((path, _)) = &design_resolution {
+    if let Some((path, _)) = design_sources.first() {
         args.design = Some(path.display().to_string());
     }
-
-    let explicit_design = match args.design.as_deref().filter(|value| *value != "auto") {
-        Some(path) => Some(load_design(path)?),
-        None => None,
+    let loaded_design = if design_sources.is_empty() {
+        None
+    } else {
+        Some(load_design_sources(&design_sources)?)
     };
-    let design_spec = explicit_design.as_ref().map(|(spec, _)| spec);
+    let design_spec = loaded_design.as_ref().map(|(spec, _)| spec);
+    let design_notes = loaded_design
+        .as_ref()
+        .map(|(_, notes)| notes.clone())
+        .unwrap_or_default();
+    let design_source_labels: Vec<String> = design_sources
+        .iter()
+        .map(|(path, _)| path.display().to_string())
+        .collect();
+
     let mut rule_notes = Vec::new();
     let rule_sources = resolve_rules_sources(args.rules.as_deref());
     let rule_source_labels: Vec<String> = rule_sources
         .iter()
-        .map(|path| path.display().to_string())
+        .map(|(path, _)| path.display().to_string())
         .collect();
-    let ruleset = if rule_sources.is_empty() {
+    let rule_origins: Vec<String> = rule_sources
+        .iter()
+        .map(|(_, origin)| (*origin).to_string())
+        .collect();
+    let rule_paths: Vec<PathBuf> = rule_sources.iter().map(|(path, _)| path.clone()).collect();
+    let ruleset = if rule_paths.is_empty() {
         None
     } else {
-        let (rules, notes) = load_rules(&rule_sources, design_spec)?;
+        let (rules, notes) = load_rules(&rule_paths, design_spec)?;
         rule_notes = notes;
         Some(rules)
     };
-    let design_notes = explicit_design
-        .as_ref()
-        .map(|(_, notes)| notes.clone())
-        .unwrap_or_default();
-    let design_source = args
-        .design
-        .as_deref()
-        .filter(|value| *value != "auto")
-        .map(str::to_string);
 
     let session = launch_browser(&args)?;
     let browser = &session.browser;
@@ -991,8 +1024,9 @@ fn audit_mode(mut args: Args) -> Result<i32> {
         both_themes,
         sweep,
         &rule_source_labels,
-        design_source.as_deref(),
-        design_origin,
+        &rule_origins,
+        &design_source_labels,
+        &design_origins,
     );
     if let Some(path) = write_design_if_needed(&args, runs[0].scrape.inferred.as_ref())? {
         report["designFile"] = json!(path);
@@ -1591,8 +1625,9 @@ fn build_report(
     both_themes: bool,
     sweep: bool,
     rule_sources: &[String],
-    design_source: Option<&str>,
-    design_origin: Option<&str>,
+    rule_origins: &[String],
+    design_sources: &[String],
+    design_origins: &[String],
 ) -> Value {
     let first = &runs[0].scrape;
     let findings = if runs.len() > 1 {
@@ -1649,10 +1684,12 @@ fn build_report(
     json!({
         "tool": "ui-probe",
         "version": env!("CARGO_PKG_VERSION"),
+        "schemaVersion": 1,
         "sources": {
             "rules": rule_sources,
-            "design": design_source,
-            "designOrigin": design_origin
+            "rulesOrigin": rule_origins,
+            "design": design_sources,
+            "designOrigin": design_origins
         },
         "state": args.state,
         "theme": args.theme,
@@ -2734,13 +2771,42 @@ fn dimension_string(value: &Value) -> Option<String> {
     }
 }
 
-fn load_design(path: &str) -> Result<(DesignSpec, Vec<Value>)> {
-    let text = std::fs::read_to_string(path).with_context(|| format!("read design file {path}"))?;
-    let data: Value = serde_json::from_str(&text).context("parse design file")?;
+fn merge_json(base: &mut Value, overlay: &Value) {
+    match (base, overlay) {
+        (Value::Object(base_map), Value::Object(overlay_map)) => {
+            for (key, value) in overlay_map {
+                match base_map.get_mut(key) {
+                    Some(existing) => merge_json(existing, value),
+                    None => {
+                        base_map.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        (base, overlay) => *base = overlay.clone(),
+    }
+}
+
+fn load_design_sources(sources: &[(PathBuf, &'static str)]) -> Result<(DesignSpec, Vec<Value>)> {
+    let mut merged = Value::Object(serde_json::Map::new());
+    for (path, _) in sources.iter().rev() {
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("read design file {}", path.display()))?;
+        let data: Value = serde_json::from_str(&text)
+            .with_context(|| format!("parse design file {}", path.display()))?;
+        if !data.is_object() {
+            anyhow::bail!("design file {} is not a JSON object", path.display());
+        }
+        merge_json(&mut merged, &data);
+    }
+    Ok(parse_design(&merged))
+}
+
+fn parse_design(data: &Value) -> (DesignSpec, Vec<Value>) {
     let mut notes = Vec::new();
-    let spec = if is_dtcg(&data) {
-        let mut spec = load_dtcg_design(&data, &mut notes);
-        let flat = load_flat_design(&data, &mut notes);
+    let spec = if is_dtcg(data) {
+        let mut spec = load_dtcg_design(data, &mut notes);
+        let flat = load_flat_design(data, &mut notes);
         if spec.colors.is_none() {
             spec.colors = flat.colors;
         }
@@ -2764,9 +2830,9 @@ fn load_design(path: &str) -> Result<(DesignSpec, Vec<Value>)> {
         }
         spec
     } else {
-        load_flat_design(&data, &mut notes)
+        load_flat_design(data, &mut notes)
     };
-    Ok((spec, notes))
+    (spec, notes)
 }
 
 fn load_dtcg_design(data: &Value, notes: &mut Vec<Value>) -> DesignSpec {
@@ -3768,6 +3834,7 @@ fn source_mode(root: &Path, pretty: bool, all: bool) -> Result<i32> {
     let report = json!({
         "tool": "ui-probe",
         "version": env!("CARGO_PKG_VERSION"),
+        "schemaVersion": 1,
         "mode": "source",
         "root": root,
         "summary": {
@@ -3905,6 +3972,7 @@ struct RuleSet {
 
 struct StructuralRule {
     name: String,
+    source: String,
     selector: String,
     ancestors: Option<Constraint>,
     descendants: Option<Constraint>,
@@ -3925,6 +3993,7 @@ enum PropertyRule {
 
 struct NamedRule {
     id: String,
+    source: String,
     severity: String,
     layer: String,
     params: Value,
@@ -4157,15 +4226,28 @@ fn merge_rules(sources: &[PathBuf]) -> Result<Option<Value>> {
     let mut seen_ids: HashSet<String> = HashSet::new();
     for source in sources {
         let data = read_rules(source)?;
+        let label = source.display().to_string();
         if pack.is_none() {
             pack = data["pack"].as_str().map(str::to_string);
         }
-        structural.extend(data["structural"].as_array().cloned().unwrap_or_default());
-        for rule in data["rules"].as_array().cloned().unwrap_or_default() {
-            match rule["id"].as_str() {
-                Some(id) if !seen_ids.insert(id.to_string()) => {}
-                _ => named.push(rule),
+        for mut rule in data["structural"].as_array().cloned().unwrap_or_default() {
+            if let Some(object) = rule.as_object_mut() {
+                object.insert("_source".to_string(), json!(label));
             }
+            structural.push(rule);
+        }
+        for mut rule in data["rules"].as_array().cloned().unwrap_or_default() {
+            let duplicate = rule["id"]
+                .as_str()
+                .map(|id| !seen_ids.insert(id.to_string()))
+                .unwrap_or(false);
+            if duplicate {
+                continue;
+            }
+            if let Some(object) = rule.as_object_mut() {
+                object.insert("_source".to_string(), json!(label));
+            }
+            named.push(rule);
         }
     }
     Ok(Some(json!({
@@ -4199,6 +4281,7 @@ fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Ve
                 "properties",
                 "severity",
                 "layer",
+                "_source",
             ],
             "structural rule",
         )?;
@@ -4206,6 +4289,7 @@ fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Ve
             .as_str()
             .context("structural rule needs a name")?
             .to_string();
+        let rule_source = rule["_source"].as_str().unwrap_or("").to_string();
         let selector = rule["selector"]
             .as_str()
             .context("structural rule needs a selector")?
@@ -4288,6 +4372,7 @@ fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Ve
 
         structural.push(StructuralRule {
             name,
+            source: rule_source,
             selector,
             ancestors,
             descendants,
@@ -4301,13 +4386,14 @@ fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Ve
     for rule in data["rules"].as_array().cloned().unwrap_or_default() {
         check_keys(
             &rule,
-            &["id", "enabled", "severity", "layer", "params"],
+            &["id", "enabled", "severity", "layer", "params", "_source"],
             "named rule",
         )?;
         let id = rule["id"]
             .as_str()
             .context("named rule needs an id")?
             .to_string();
+        let rule_source = rule["_source"].as_str().unwrap_or("").to_string();
         if !NAMED_RULES.contains(&id.as_str()) {
             anyhow::bail!("rules: unknown rule id {id}");
         }
@@ -4323,6 +4409,7 @@ fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Ve
         let params = resolve_params(rule["params"].clone(), design, &id, &mut notes);
         named.push(NamedRule {
             id,
+            source: rule_source,
             severity,
             layer,
             params,
@@ -4606,6 +4693,7 @@ fn rule_findings(
             if let Some((property, expected, actual)) = violated {
                 findings.push(json!({
                     "check": rule.name,
+                    "ruleSource": rule.source,
                     "severity": rule.severity,
                     "layer": rule.layer,
                     "selector": element["selector"],
@@ -4621,6 +4709,7 @@ fn rule_findings(
         let mut push = |selector: &str, property: &str, message: &str, evidence: Value| {
             findings.push(json!({
                 "check": rule.id,
+                "ruleSource": rule.source,
                 "severity": rule.severity,
                 "layer": rule.layer,
                 "selector": selector,
