@@ -550,6 +550,14 @@ fn activated_js(index: usize) -> String {
     )
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum OutputFormat {
+    Json,
+    Sarif,
+    Markdown,
+    Github,
+}
+
 struct Args {
     url: Option<String>,
     source: Option<PathBuf>,
@@ -577,6 +585,7 @@ struct Args {
     write_baseline: bool,
     update_baseline: bool,
     no_baseline: bool,
+    format: OutputFormat,
 }
 
 fn main() {
@@ -615,6 +624,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
     let mut write_baseline = false;
     let mut update_baseline = false;
     let mut no_baseline = false;
+    let mut format = OutputFormat::Json;
     let mut chrome = std::env::var("UI_PROBE_CHROME")
         .or_else(|_| std::env::var("CHROME"))
         .ok()
@@ -680,6 +690,16 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
             "--write-baseline" => write_baseline = true,
             "--update-baseline" => update_baseline = true,
             "--no-baseline" => no_baseline = true,
+            "--format" => {
+                let value = argv.next().context("--format needs a value")?;
+                format = match value.as_str() {
+                    "json" => OutputFormat::Json,
+                    "sarif" => OutputFormat::Sarif,
+                    "markdown" => OutputFormat::Markdown,
+                    "github" => OutputFormat::Github,
+                    other => anyhow::bail!("unknown format: {other}"),
+                };
+            }
             "--allow" => {
                 allow = argv
                     .next()
@@ -699,7 +719,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
             "--pretty" => pretty = true,
             "--help" | "-h" => {
                 println!(
-                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH] [--json]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n         --baseline PATH --write-baseline --update-baseline --no-baseline\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
+                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH] [--json]\n       ui-probe doctor [--json]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n         --baseline PATH --write-baseline --update-baseline --no-baseline\n         --format json|sarif|markdown|github\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
                 );
                 std::process::exit(0);
             }
@@ -738,6 +758,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
         write_baseline,
         update_baseline,
         no_baseline,
+        format,
     })
 }
 
@@ -747,6 +768,7 @@ fn run() -> Result<i32> {
     match command.as_deref() {
         Some("init") => init_mode(&raw[1..]),
         Some("pack") => pack_mode(&raw[1..]),
+        Some("doctor") => doctor_mode(&raw[1..]),
         Some("audit") => audit_mode(parse_args(audit_arguments(&raw[1..]))?),
         Some("source") => audit_mode(parse_args(source_arguments(&raw[1..]))?),
         _ => audit_mode(parse_args(raw)?),
@@ -866,21 +888,26 @@ struct Baseline {
     fingerprints: HashSet<String>,
 }
 
-fn resolve_baseline_path(args: &Args) -> Option<PathBuf> {
-    if args.no_baseline {
+fn resolve_baseline_path(
+    explicit: Option<&Path>,
+    no_baseline: bool,
+    write: bool,
+    update: bool,
+) -> Option<PathBuf> {
+    if no_baseline {
         return None;
     }
-    if let Some(path) = &args.baseline {
-        return Some(path.clone());
+    if let Some(path) = explicit {
+        return Some(path.to_path_buf());
     }
     let cwd = std::env::current_dir().ok()?;
     if let Some(config) = project_config_dir(&cwd) {
         let path = config.join("baseline.json");
-        if path.is_file() || args.write_baseline || args.update_baseline {
+        if path.is_file() || write || update {
             return Some(path);
         }
     }
-    if args.write_baseline || args.update_baseline {
+    if write || update {
         return Some(cwd.join(".opal").join("baseline.json"));
     }
     None
@@ -1000,7 +1027,12 @@ fn apply_audit_baseline(
         .filter_map(|finding| finding["fingerprint"].as_str().map(str::to_string))
         .collect();
     if args.write_baseline || args.update_baseline {
-        let Some(path) = resolve_baseline_path(args) else {
+        let Some(path) = resolve_baseline_path(
+            args.baseline.as_deref(),
+            args.no_baseline,
+            args.write_baseline,
+            args.update_baseline,
+        ) else {
             anyhow::bail!("baseline writing is disabled");
         };
         let mut output = if args.update_baseline {
@@ -1044,7 +1076,12 @@ fn apply_source_baseline(
         .filter_map(|finding| finding["fingerprint"].as_str().map(str::to_string))
         .collect();
     if args.write_baseline || args.update_baseline {
-        let Some(path) = resolve_baseline_path(args) else {
+        let Some(path) = resolve_baseline_path(
+            args.baseline.as_deref(),
+            args.no_baseline,
+            args.write_baseline,
+            args.update_baseline,
+        ) else {
             anyhow::bail!("baseline writing is disabled");
         };
         let mut output = if args.update_baseline {
@@ -1073,6 +1110,373 @@ fn apply_source_baseline(
     });
     refresh_summary(report);
     Ok(())
+}
+
+fn severity_level(finding: &Value) -> &'static str {
+    match finding["severity"].as_str().unwrap_or("P3") {
+        "P0" | "P1" | "error" => "error",
+        "P2" | "warning" => "warning",
+        _ => "note",
+    }
+}
+
+fn sarif_report(report: &Value) -> Value {
+    let findings = report["findings"].as_array().cloned().unwrap_or_default();
+    let mut rules = Vec::new();
+    let mut seen = HashSet::new();
+    for finding in &findings {
+        let id = finding["check"].as_str().unwrap_or("unknown");
+        if !seen.insert(id.to_string()) {
+            continue;
+        }
+        let message = finding["message"].as_str().unwrap_or(id);
+        rules.push(json!({
+            "id": id,
+            "name": id,
+            "shortDescription": { "text": message },
+            "defaultConfiguration": { "level": severity_level(finding) },
+            "properties": { "layer": finding["layer"] }
+        }));
+    }
+    let results: Vec<Value> = findings
+        .iter()
+        .map(|finding| {
+            let mut result = json!({
+                "ruleId": finding["check"],
+                "level": severity_level(finding),
+                "message": { "text": finding["message"] },
+                "partialFingerprints": {
+                    "uiProbeFingerprint": finding["fingerprint"]
+                },
+                "properties": {
+                    "state": finding["state"],
+                    "states": finding["states"],
+                    "themes": finding["themes"],
+                    "viewports": finding["viewports"],
+                    "ruleSource": finding["ruleSource"],
+                    "selector": finding["selector"]
+                }
+            });
+            if let Some(file) = finding["file"].as_str() {
+                result["locations"] = json!([{
+                    "physicalLocation": {
+                        "artifactLocation": { "uri": file },
+                        "region": { "startLine": finding["line"].as_u64().unwrap_or(1) }
+                    }
+                }]);
+            } else if let Some(selector) = finding["selector"].as_str() {
+                result["locations"] = json!([{
+                    "logicalLocations": [{ "name": selector, "kind": "element" }]
+                }]);
+            }
+            result
+        })
+        .collect();
+    json!({
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "ui-probe",
+                    "version": report["version"],
+                    "informationUri": "https://github.com/hollowheap/opal",
+                    "rules": rules
+                }
+            },
+            "results": results,
+            "properties": {
+                "schemaVersion": report["schemaVersion"],
+                "sources": report["sources"],
+                "baseline": report["baseline"]
+            }
+        }]
+    })
+}
+
+fn escape_markdown(value: &str) -> String {
+    value.replace('|', "\\|").replace('\n', " ")
+}
+
+fn markdown_report(report: &Value) -> String {
+    let mut out = String::new();
+    let title = report["title"]
+        .as_str()
+        .or_else(|| report["root"].as_str())
+        .unwrap_or("ui-probe");
+    out.push_str(&format!("# ui-probe: {title}\n\n"));
+    if let Some(url) = report["url"].as_str() {
+        out.push_str(&format!("- URL: {url}\n"));
+    }
+    let findings = report["findings"].as_array().cloned().unwrap_or_default();
+    out.push_str(&format!("- Findings: {}\n", findings.len()));
+    if let Some(suppressed) = report["baseline"]["suppressed"].as_u64() {
+        out.push_str(&format!("- Baseline suppressed: {suppressed}\n"));
+    }
+    if let Some(unverified) = report["unverified"].as_array() {
+        out.push_str(&format!("- Unverified: {}\n", unverified.len()));
+    }
+    out.push('\n');
+    if findings.is_empty() {
+        out.push_str("No findings.\n");
+        return out;
+    }
+    out.push_str("| Severity | Check | Location | Message |\n");
+    out.push_str("|---|---|---|---|\n");
+    for finding in &findings {
+        let severity = finding["severity"].as_str().unwrap_or("advisory");
+        let check = finding["check"].as_str().unwrap_or("unknown");
+        let location = finding["file"]
+            .as_str()
+            .map(|file| format!("{}:{}", file, finding["line"].as_u64().unwrap_or(1)))
+            .or_else(|| finding["selector"].as_str().map(str::to_string))
+            .unwrap_or_else(|| "-".to_string());
+        let message = escape_markdown(finding["message"].as_str().unwrap_or(""));
+        out.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            severity,
+            check,
+            escape_markdown(&location),
+            message
+        ));
+    }
+    out
+}
+
+fn escape_github_message(value: &str) -> String {
+    value
+        .replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+fn escape_github_property(value: &str) -> String {
+    escape_github_message(value)
+        .replace(':', "%3A")
+        .replace(',', "%2C")
+}
+
+fn github_report(report: &Value) -> String {
+    let mut out = String::new();
+    for finding in report["findings"].as_array().cloned().unwrap_or_default() {
+        let level = severity_level(&finding);
+        let check = finding["check"].as_str().unwrap_or("ui-probe");
+        let message = escape_github_message(finding["message"].as_str().unwrap_or(""));
+        if let Some(file) = finding["file"].as_str() {
+            out.push_str(&format!(
+                "::{} file={},line={},title={}::{}\n",
+                level,
+                escape_github_property(file),
+                finding["line"].as_u64().unwrap_or(1),
+                escape_github_property(check),
+                message
+            ));
+        } else {
+            let selector = finding["selector"].as_str().unwrap_or("");
+            out.push_str(&format!(
+                "::{} title={}::{} {}\n",
+                level,
+                escape_github_property(check),
+                message,
+                escape_github_message(selector)
+            ));
+        }
+    }
+    out
+}
+
+fn emit_report(report: &Value, format: OutputFormat, pretty: bool) -> Result<()> {
+    match format {
+        OutputFormat::Json => {
+            if pretty {
+                println!("{}", serde_json::to_string_pretty(report)?);
+            } else {
+                println!("{}", serde_json::to_string(report)?);
+            }
+        }
+        OutputFormat::Sarif => {
+            let sarif = sarif_report(report);
+            if pretty {
+                println!("{}", serde_json::to_string_pretty(&sarif)?);
+            } else {
+                println!("{}", serde_json::to_string(&sarif)?);
+            }
+        }
+        OutputFormat::Markdown => print!("{}", markdown_report(report)),
+        OutputFormat::Github => print!("{}", github_report(report)),
+    }
+    Ok(())
+}
+
+fn push_check(checks: &mut Vec<Value>, ok: &mut bool, name: &str, passed: bool, detail: String) {
+    if !passed {
+        *ok = false;
+    }
+    checks.push(json!({
+        "name": name,
+        "ok": passed,
+        "detail": detail
+    }));
+}
+
+fn doctor_mode(argv: &[String]) -> Result<i32> {
+    let mut json_output = false;
+    let mut chrome = std::env::var("UI_PROBE_CHROME")
+        .or_else(|_| std::env::var("CHROME"))
+        .ok()
+        .map(PathBuf::from);
+    let mut rules = None;
+    let mut design = None;
+    let mut argv = argv.iter();
+    while let Some(arg) = argv.next() {
+        match arg.as_str() {
+            "--json" => json_output = true,
+            "--chrome" => {
+                chrome = Some(PathBuf::from(argv.next().context("--chrome needs a path")?))
+            }
+            "--rules" => rules = Some(PathBuf::from(argv.next().context("--rules needs a path")?)),
+            "--design" => design = Some(argv.next().context("--design needs a path")?.clone()),
+            "--help" | "-h" => {
+                println!("usage: ui-probe doctor [--json] [--chrome PATH] [--rules PATH] [--design PATH]");
+                return Ok(0);
+            }
+            other => anyhow::bail!("unknown argument: {other}"),
+        }
+    }
+
+    let mut checks = Vec::new();
+    let mut ok = true;
+
+    match discover_chrome(chrome.as_deref()) {
+        Ok(path) => match Command::new(&path).arg("--version").output() {
+            Ok(output) if output.status.success() => {
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                push_check(
+                    &mut checks,
+                    &mut ok,
+                    "chromium",
+                    true,
+                    format!("{} ({version})", path.display()),
+                );
+            }
+            Ok(output) => push_check(
+                &mut checks,
+                &mut ok,
+                "chromium",
+                false,
+                format!("{} exited {}", path.display(), output.status),
+            ),
+            Err(error) => push_check(
+                &mut checks,
+                &mut ok,
+                "chromium",
+                false,
+                format!("{}: {error}", path.display()),
+            ),
+        },
+        Err(error) => push_check(&mut checks, &mut ok, "chromium", false, error.to_string()),
+    }
+
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let project = project_config_dir(&cwd)
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "none".to_string());
+    push_check(&mut checks, &mut ok, "project", true, project);
+
+    let design_sources = resolve_design_sources(design.as_deref());
+    let mut design_spec = None;
+    if design_sources.is_empty() {
+        push_check(&mut checks, &mut ok, "design", true, "none".to_string());
+    } else {
+        match load_design_sources(&design_sources) {
+            Ok((spec, notes)) => {
+                design_spec = Some(spec);
+                let paths: Vec<String> = design_sources
+                    .iter()
+                    .map(|(path, _)| path.display().to_string())
+                    .collect();
+                push_check(
+                    &mut checks,
+                    &mut ok,
+                    "design",
+                    true,
+                    format!("{} ({} notes)", paths.join(", "), notes.len()),
+                );
+            }
+            Err(error) => push_check(&mut checks, &mut ok, "design", false, error.to_string()),
+        }
+    }
+
+    let rule_sources = resolve_rules_sources(rules.as_deref());
+    if rule_sources.is_empty() {
+        push_check(&mut checks, &mut ok, "rules", true, "none".to_string());
+    } else {
+        let paths: Vec<PathBuf> = rule_sources.iter().map(|(path, _)| path.clone()).collect();
+        match load_rules(&paths, design_spec.as_ref()) {
+            Ok((set, notes)) => {
+                let labels: Vec<String> = rule_sources
+                    .iter()
+                    .map(|(path, _)| path.display().to_string())
+                    .collect();
+                push_check(
+                    &mut checks,
+                    &mut ok,
+                    "rules",
+                    true,
+                    format!(
+                        "{} ({} structural, {} named, {} notes)",
+                        labels.join(", "),
+                        set.structural.len(),
+                        set.named.len(),
+                        notes.len()
+                    ),
+                );
+            }
+            Err(error) => push_check(&mut checks, &mut ok, "rules", false, error.to_string()),
+        }
+    }
+
+    let baseline_path = resolve_baseline_path(None, false, false, false);
+    match load_baseline(baseline_path.as_deref(), true) {
+        Ok(Some(baseline)) => push_check(
+            &mut checks,
+            &mut ok,
+            "baseline",
+            true,
+            format!(
+                "{} ({} fingerprints)",
+                baseline.path.display(),
+                baseline.fingerprints.len()
+            ),
+        ),
+        Ok(None) => push_check(&mut checks, &mut ok, "baseline", true, "none".to_string()),
+        Err(error) => push_check(&mut checks, &mut ok, "baseline", false, error.to_string()),
+    }
+
+    let report = json!({
+        "tool": "ui-probe",
+        "version": env!("CARGO_PKG_VERSION"),
+        "schemaVersion": 1,
+        "ok": ok,
+        "checks": checks
+    });
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        for check in report["checks"].as_array().cloned().unwrap_or_default() {
+            println!(
+                "{} {}: {}",
+                if check["ok"].as_bool().unwrap_or(false) {
+                    "ok"
+                } else {
+                    "FAIL"
+                },
+                check["name"].as_str().unwrap_or("check"),
+                check["detail"].as_str().unwrap_or("")
+            );
+        }
+    }
+    Ok(if ok { 0 } else { 1 })
 }
 
 fn init_mode(argv: &[String]) -> Result<i32> {
@@ -1199,7 +1603,12 @@ fn audit_mode(mut args: Args) -> Result<i32> {
         .map(|(path, _)| path.display().to_string())
         .collect();
 
-    let baseline_path = resolve_baseline_path(&args);
+    let baseline_path = resolve_baseline_path(
+        args.baseline.as_deref(),
+        args.no_baseline,
+        args.write_baseline,
+        args.update_baseline,
+    );
     let baseline = load_baseline(
         baseline_path.as_deref(),
         args.write_baseline || args.update_baseline,
@@ -1284,11 +1693,7 @@ fn audit_mode(mut args: Args) -> Result<i32> {
     apply_audit_baseline(&mut report, &args, baseline, &runs[0].scrape)?;
     drop(session);
 
-    if args.pretty {
-        println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        println!("{}", serde_json::to_string(&report)?);
-    }
+    emit_report(&report, args.format, args.pretty)?;
 
     if args.write_baseline || args.update_baseline {
         return Ok(0);
@@ -1321,9 +1726,9 @@ impl Drop for BrowserSession {
     }
 }
 
-fn find_chrome(args: &Args) -> Result<PathBuf> {
-    if let Some(path) = &args.chrome {
-        return Ok(path.clone());
+fn discover_chrome(explicit: Option<&Path>) -> Result<PathBuf> {
+    if let Some(path) = explicit {
+        return Ok(path.to_path_buf());
     }
     for name in [
         "chromium",
@@ -1336,6 +1741,10 @@ fn find_chrome(args: &Args) -> Result<PathBuf> {
         }
     }
     anyhow::bail!("chromium not found; pass --chrome or set UI_PROBE_CHROME")
+}
+
+fn find_chrome(args: &Args) -> Result<PathBuf> {
+    discover_chrome(args.chrome.as_deref())
 }
 
 fn which(name: &str) -> Result<PathBuf> {
@@ -4080,7 +4489,12 @@ fn source_mode(root: &Path, args: &Args) -> Result<i32> {
             ))
         })
         .collect::<Result<_>>()?;
-    let baseline_path = resolve_baseline_path(args);
+    let baseline_path = resolve_baseline_path(
+        args.baseline.as_deref(),
+        args.no_baseline,
+        args.write_baseline,
+        args.update_baseline,
+    );
     let baseline = load_baseline(
         baseline_path.as_deref(),
         args.write_baseline || args.update_baseline,
@@ -4180,11 +4594,7 @@ fn source_mode(root: &Path, args: &Args) -> Result<i32> {
     });
     apply_source_baseline(&mut report, args, baseline)?;
 
-    if args.pretty {
-        println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        println!("{}", serde_json::to_string(&report)?);
-    }
+    emit_report(&report, args.format, args.pretty)?;
 
     if args.write_baseline || args.update_baseline {
         return Ok(0);

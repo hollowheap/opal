@@ -8,8 +8,13 @@ Rendered and source UI evidence as JSON. Exit codes: `0` clean, `2` findings, `1
 - `audit <url> [flags]` samples a page in headless Chromium.
 - `source [dir] [flags]` scans changed UI files without a browser. `--source-all` scans every UI file.
 - `pack [--rules <path>] [--json]` prints the resolved rules files, one per line, highest precedence first.
+- `doctor [--json]` checks Chromium, project config, rules, design, and baseline.
 
 The legacy `--url` and `--source` flags remain accepted.
+
+## Formats
+
+`--format json|sarif|markdown|github` controls `audit` and `source` output. SARIF is version 2.1.0. The GitHub format emits workflow annotations.
 
 ## Capture
 
@@ -46,6 +51,10 @@ The default baseline is the nearest `.opal/baseline.json`. `--baseline <path>` s
 ## Suppressions
 
 Source files accept `opal-ignore <id>` on the matching line, `opal-ignore-next-line <id>`, and `opal-ignore-file <id>`. Rendered pages accept `data-opal-ignore="<id>"` on the element or an ancestor. Use `*` to suppress every rule finding for that element or line.
+
+## Doctor
+
+`ui-probe doctor` validates Chromium, project config, rules, design, and baseline. It exits `1` when a required check fails. `--json` emits machine-readable checks.
 
 ## Chromium
 

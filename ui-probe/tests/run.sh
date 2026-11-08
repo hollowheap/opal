@@ -89,6 +89,17 @@ exists() {
   fi
 }
 
+file_has() {
+  name=$1
+  path=$2
+  text=$3
+  if grep -q -- "$text" "$path"; then
+    ok
+  else
+    bad "$name output lacks: $text"
+  fi
+}
+
 file_url() {
   printf 'file://%s/%s' "$here" "$1"
 }
@@ -317,6 +328,28 @@ jqr design-explicit-source "$tmp/design-explicit.json" '.sources.designOrigin ==
 run source-command 2 "$tmp/source-command.json" source "$here/source" --source-all --pretty
 jqr source-command-token "$tmp/source-command.json" '[.findings[] | select(.check == "raw-color") | .file] | unique == ["component.tsx"]'
 jqr source-command-schema "$tmp/source-command.json" '.schemaVersion == 1'
+
+run format-sarif 2 "$tmp/sarif.json" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-error.json" --format sarif
+jqr format-sarif "$tmp/sarif.json" '.version == "2.1.0" and (.runs[0].results | length > 0) and (.runs[0].tool.driver.rules | length > 0) and ([.runs[0].results[].ruleId] | index("nested-cards") != null)'
+
+run format-markdown 2 "$tmp/format.md" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-error.json" --format markdown
+file_has format-markdown "$tmp/format.md" "# ui-probe:"
+file_has format-markdown "$tmp/format.md" "nested-cards"
+
+run format-github 2 "$tmp/format.github" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-error.json" --format github
+file_has format-github "$tmp/format.github" "::error title=nested-cards"
+
+run source-format-sarif 2 "$tmp/source-format.json" source "$here/source" --source-all --format sarif
+jqr source-format-sarif "$tmp/source-format.json" '[.runs[0].results[] | select(.ruleId == "raw-color") | .locations[0].physicalLocation.artifactLocation.uri] | index("component.tsx") != null'
+
+run doctor 0 "$tmp/doctor.json" doctor --json
+jqr doctor "$tmp/doctor.json" '.ok == true and ([.checks[] | select(.name == "chromium" and .ok)] | length == 1)'
+run doctor-text 0 "$tmp/doctor.txt" doctor
+file_has doctor-text "$tmp/doctor.txt" "ok chromium:"
+run doctor-fail 1 "$tmp/doctor-fail.json" doctor --json --chrome "$here/fake-chrome.sh"
+jqr doctor-fail "$tmp/doctor-fail.json" '.ok == false and ([.checks[] | select(.name == "chromium" and (.ok | not))] | length == 1)'
+run doctor-rules 1 "$tmp/doctor-rules.json" doctor --json --rules "$here/invalid-rule-id.json"
+jqr doctor-rules "$tmp/doctor-rules.json" '.ok == false and ([.checks[] | select(.name == "rules" and (.ok | not))] | length == 1)'
 
 mkdir -p "$tmp/source-suppress"
 cat >"$tmp/source-suppress/component.tsx" <<'EOF'
