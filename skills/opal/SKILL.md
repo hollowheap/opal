@@ -39,7 +39,7 @@ The rules pack reports slop patterns. Treat its findings as advisory, not bans: 
 
 Run `scripts/compile.sh` once per machine. Run `~/.opal/bin/ui-probe init` once per project. Fill `.opal/design.json`; add `.opal/rules.json` only to override named rules or add structural rules. Then run `~/.opal/bin/ui-probe audit <url> --theme both --viewport sweep`.
 
-Rules resolve from `--rules`, the nearest `.opal/rules.json`, then `~/.opal/rules.json`. Named rules overlay by id; structural rules append. The report lists every loaded pack under `sources.rules` and tags rule findings with `ruleSource`. Design layers `--design`, the nearest `.opal/design.json`, then `~/.opal/design.json`; higher layers override matching token paths, and the report lists the files under `sources.design`.
+Rules resolve from `--rules`, the nearest `.opal/rules.json`, then `~/.opal/rules.json`. Named rules overlay by id; structural rules append. The report lists every loaded pack under `sources.rules` and tags rule findings with `ruleSource`. Design layers `--design`, the nearest `.opal/design.json`, then `~/.opal/design.json`; higher layers override matching token paths, and the report lists the files under `sources.design`. Use `--write-baseline` to accept current findings; later runs report only new fingerprints. Inline suppressions use `opal-ignore` comments in source and `data-opal-ignore` in rendered pages.
 
 ## Audit
 

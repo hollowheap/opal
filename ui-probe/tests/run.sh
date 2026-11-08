@@ -272,6 +272,10 @@ jqr audit-separator-sources "$tmp/audit-separator.json" '.sources.rules | length
 run_in pack-json "$tmp/project" 0 "$tmp/pack.json" pack --json
 jqr pack-json-sources "$tmp/pack.json" '.sources | length == 2 and .[0].origin == "project" and (.[0].path | endswith("/.opal/rules.json")) and .[1].origin == "user"'
 
+run_in suppress "$tmp/project" 2 "$tmp/suppress.json" audit "$(file_url suppress.html)" --no-sandbox --pretty
+jqr suppress-nested "$tmp/suppress.json" '[.findings[] | select(.check == "nested-cards")] | length == 1'
+jqr suppress-selector "$tmp/suppress.json" '[.findings[] | select(.check == "nested-cards") | .selector] | all(contains(":nth-of-type(2)"))'
+
 mkdir -p "$tmp/project/app/src"
 run_in pack-walk "$tmp/project/app/src" 0 "$tmp/pack-walk.out" pack
 if [ "$(sed -n '1p' "$tmp/pack-walk.out")" = "$tmp/project/.opal/rules.json" ]; then
@@ -313,6 +317,54 @@ jqr design-explicit-source "$tmp/design-explicit.json" '.sources.designOrigin ==
 run source-command 2 "$tmp/source-command.json" source "$here/source" --source-all --pretty
 jqr source-command-token "$tmp/source-command.json" '[.findings[] | select(.check == "raw-color") | .file] | unique == ["component.tsx"]'
 jqr source-command-schema "$tmp/source-command.json" '.schemaVersion == 1'
+
+mkdir -p "$tmp/source-suppress"
+cat >"$tmp/source-suppress/component.tsx" <<'EOF'
+const a = "#ff0000";
+const b = "#00ff00"; // opal-ignore raw-color
+// opal-ignore-next-line raw-color
+const c = "#0000ff";
+EOF
+cat >"$tmp/source-suppress/ignored.tsx" <<'EOF'
+// opal-ignore-file raw-color
+const d = "#123456";
+EOF
+run source-suppress 2 "$tmp/source-suppress.json" source "$tmp/source-suppress" --source-all --pretty
+jqr source-suppress-count "$tmp/source-suppress.json" '.summary.findings == 1 and .summary.suppressed == 3'
+jqr source-suppress-line "$tmp/source-suppress.json" '.findings[0].line == 1 and .findings[0].file == "component.tsx"'
+
+mkdir -p "$tmp/baseline-project/.opal"
+cp "$here/rules-error.json" "$tmp/baseline-project/.opal/rules.json"
+run_in baseline-write "$tmp/baseline-project" 0 "$tmp/baseline-write.json" audit "$(file_url cards.html)" --no-sandbox --write-baseline --pretty
+exists baseline-file "$tmp/baseline-project/.opal/baseline.json"
+jqr baseline-written "$tmp/baseline-write.json" '.baseline.written > 0'
+
+run_in baseline-read "$tmp/baseline-project" 0 "$tmp/baseline-read.json" audit "$(file_url cards.html)" --no-sandbox --pretty
+jqr baseline-suppressed "$tmp/baseline-read.json" '.baseline.suppressed > 0 and .summary.findings == 0'
+
+run_in baseline-disabled "$tmp/baseline-project" 2 "$tmp/baseline-disabled.json" audit "$(file_url cards.html)" --no-sandbox --no-baseline --pretty
+jqr baseline-disabled-findings "$tmp/baseline-disabled.json" '.summary.findings > 0 and .baseline == null'
+
+run_in baseline-explicit-write "$tmp/baseline-project" 0 "$tmp/baseline-explicit-write.json" audit "$(file_url cards.html)" --no-sandbox --baseline "$tmp/custom-baseline.json" --write-baseline --pretty
+exists baseline-custom "$tmp/custom-baseline.json"
+run_in baseline-explicit-read "$tmp/baseline-project" 0 "$tmp/baseline-explicit-read.json" audit "$(file_url cards.html)" --no-sandbox --baseline "$tmp/custom-baseline.json" --pretty
+jqr baseline-explicit-suppressed "$tmp/baseline-explicit-read.json" '.baseline.suppressed > 0 and .summary.findings == 0'
+
+run_in baseline-missing "$tmp/baseline-project" 1 "$tmp/baseline-missing.json" audit "$(file_url clean.html)" --no-sandbox --baseline "$tmp/missing-baseline.json"
+err_has baseline-missing "baseline file not found"
+
+before=$(jq '.fingerprints | length' "$tmp/baseline-project/.opal/baseline.json")
+run_in baseline-update "$tmp/baseline-project" 0 "$tmp/baseline-update.json" audit "$(file_url generic.html)" --no-sandbox --update-baseline --pretty
+after=$(jq '.fingerprints | length' "$tmp/baseline-project/.opal/baseline.json")
+if [ "$after" -gt "$before" ]; then
+  ok
+else
+  bad "baseline update did not add fingerprints"
+fi
+
+run_in source-baseline-write "$tmp/source-suppress" 0 "$tmp/source-baseline-write.json" source . --source-all --write-baseline --pretty
+run_in source-baseline-read "$tmp/source-suppress" 0 "$tmp/source-baseline-read.json" source . --source-all --pretty
+jqr source-baseline-suppressed "$tmp/source-baseline-read.json" '.baseline.suppressed == 1 and .summary.findings == 0'
 
 echo "ui-probe tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

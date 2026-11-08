@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Suppressed fixture</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #ffffff; color: #1a1a1a; font-family: system-ui, sans-serif; }
+      .card { padding: 16px; border: 1px solid #1a1a1a; background: #ffffff; }
+      a, button { min-width: 44px; min-height: 44px; padding: 8px 16px; }
+      a:hover, button:hover { background: #f2f2f2; }
+      a:focus-visible, button:focus-visible { outline: 2px solid #1a1a1a; }
+      ::selection { background: #d0d0d0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Suppressed nested card</h1>
+      <div class="card">
+        <div class="card" data-opal-ignore="nested-cards">Ignored nested card</div>
+        <div class="card">Reported nested card</div>
+      </div>
+      <p><a href="#main">A link</a></p>
+    </main>
+  </body>
+</html>

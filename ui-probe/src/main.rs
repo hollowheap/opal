@@ -4,7 +4,7 @@ use headless_chrome::protocol::cdp::Emulation;
 use headless_chrome::Browser;
 use regex::Regex;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -159,6 +159,14 @@ const JS: &str = r##"
   };
   walkRoot(document.documentElement, null);
   const position = new Map(rawEntries.map((entry, index) => [entry.el, index]));
+  const ignoreRules = (el) => {
+    const out = [];
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const raw = n.getAttribute("data-opal-ignore");
+      if (raw) out.push(...raw.toLowerCase().split(/[\s,]+/).filter(Boolean));
+    }
+    return out;
+  };
   const elements = rawEntries.map((entry, index) => {
     const el = entry.el;
     const cs = getComputedStyle(el);
@@ -276,7 +284,8 @@ const JS: &str = r##"
       expanded: el.getAttribute("aria-expanded"),
       hasPopup: el.getAttribute("aria-haspopup"),
       href: tag === "a" ? el.href : null,
-      colourFailures
+      colourFailures,
+      ignoreRules: ignoreRules(el)
     };
   });
   const focusableSel = "a[href],button,input,select,textarea,summary,[tabindex]";
@@ -564,6 +573,10 @@ struct Args {
     infer_missing: bool,
     force: bool,
     rules: Option<PathBuf>,
+    baseline: Option<PathBuf>,
+    write_baseline: bool,
+    update_baseline: bool,
+    no_baseline: bool,
 }
 
 fn main() {
@@ -598,6 +611,10 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
     let mut infer_missing = false;
     let mut force = false;
     let mut rules = None;
+    let mut baseline = None;
+    let mut write_baseline = false;
+    let mut update_baseline = false;
+    let mut no_baseline = false;
     let mut chrome = std::env::var("UI_PROBE_CHROME")
         .or_else(|_| std::env::var("CHROME"))
         .ok()
@@ -655,6 +672,14 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
             "--infer-missing" => infer_missing = true,
             "--force" => force = true,
             "--rules" => rules = Some(PathBuf::from(argv.next().context("--rules needs a path")?)),
+            "--baseline" => {
+                baseline = Some(PathBuf::from(
+                    argv.next().context("--baseline needs a path")?,
+                ))
+            }
+            "--write-baseline" => write_baseline = true,
+            "--update-baseline" => update_baseline = true,
+            "--no-baseline" => no_baseline = true,
             "--allow" => {
                 allow = argv
                     .next()
@@ -674,7 +699,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
             "--pretty" => pretty = true,
             "--help" | "-h" => {
                 println!(
-                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH] [--json]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
+                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH] [--json]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n         --baseline PATH --write-baseline --update-baseline --no-baseline\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
                 );
                 std::process::exit(0);
             }
@@ -709,6 +734,10 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
         infer_missing,
         force,
         rules,
+        baseline,
+        write_baseline,
+        update_baseline,
+        no_baseline,
     })
 }
 
@@ -832,6 +861,220 @@ fn push_source(sources: &mut Vec<(PathBuf, &'static str)>, path: PathBuf, origin
     }
 }
 
+struct Baseline {
+    path: PathBuf,
+    fingerprints: HashSet<String>,
+}
+
+fn resolve_baseline_path(args: &Args) -> Option<PathBuf> {
+    if args.no_baseline {
+        return None;
+    }
+    if let Some(path) = &args.baseline {
+        return Some(path.clone());
+    }
+    let cwd = std::env::current_dir().ok()?;
+    if let Some(config) = project_config_dir(&cwd) {
+        let path = config.join("baseline.json");
+        if path.is_file() || args.write_baseline || args.update_baseline {
+            return Some(path);
+        }
+    }
+    if args.write_baseline || args.update_baseline {
+        return Some(cwd.join(".opal").join("baseline.json"));
+    }
+    None
+}
+
+fn load_baseline(path: Option<&Path>, allow_missing: bool) -> Result<Option<Baseline>> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    if !path.is_file() {
+        if allow_missing {
+            return Ok(None);
+        }
+        anyhow::bail!("baseline file not found: {}", path.display());
+    }
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("read baseline file {}", path.display()))?;
+    let data: Value = serde_json::from_str(&text)
+        .with_context(|| format!("parse baseline file {}", path.display()))?;
+    check_keys(&data, &["version", "fingerprints"], "baseline file")?;
+    if data["version"].as_u64() != Some(1) {
+        anyhow::bail!("baseline: version must be 1");
+    }
+    let fingerprints = data["fingerprints"]
+        .as_array()
+        .context("baseline: fingerprints must be an array")?
+        .iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .collect();
+    Ok(Some(Baseline {
+        path: path.to_path_buf(),
+        fingerprints,
+    }))
+}
+
+fn write_baseline(path: &Path, fingerprints: &HashSet<String>) -> Result<()> {
+    let mut list: Vec<&String> = fingerprints.iter().collect();
+    list.sort();
+    let document = json!({
+        "version": 1,
+        "fingerprints": list
+    });
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    std::fs::write(path, serde_json::to_string_pretty(&document)? + "\n")
+        .with_context(|| format!("write baseline file {}", path.display()))?;
+    Ok(())
+}
+
+fn hash_text(text: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in text.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn finding_fingerprint(finding: &Value) -> String {
+    let mut parts = Vec::new();
+    for key in [
+        "check", "layer", "selector", "property", "message", "file", "line",
+    ] {
+        if let Some(value) = finding.get(key) {
+            match value {
+                Value::String(text) => parts.push(text.clone()),
+                Value::Number(number) => parts.push(number.to_string()),
+                Value::Null => {}
+                other => parts.push(other.to_string()),
+            }
+        }
+    }
+    hash_text(&parts.join("\u{1f}"))
+}
+
+fn baseline_filter(report: &mut Value, baseline: &Baseline) -> usize {
+    let findings = report["findings"].as_array().cloned().unwrap_or_default();
+    let mut suppressed = 0;
+    let filtered: Vec<Value> = findings
+        .into_iter()
+        .filter(|finding| {
+            let fingerprint = finding["fingerprint"].as_str().unwrap_or("");
+            if baseline.fingerprints.contains(fingerprint) {
+                suppressed += 1;
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+    report["findings"] = json!(filtered);
+    suppressed
+}
+
+fn refresh_summary(report: &mut Value) {
+    let findings = report["findings"].as_array().cloned().unwrap_or_default();
+    let mut by_check: serde_json::Map<String, Value> = serde_json::Map::new();
+    for finding in &findings {
+        let name = finding["check"].as_str().unwrap_or("unknown").to_string();
+        let count = by_check.get(&name).and_then(Value::as_u64).unwrap_or(0);
+        by_check.insert(name, json!(count + 1));
+    }
+    report["summary"]["findings"] = json!(findings.len());
+    report["summary"]["byCheck"] = Value::Object(by_check);
+}
+
+fn apply_audit_baseline(
+    report: &mut Value,
+    args: &Args,
+    baseline: Option<Baseline>,
+    first: &Scrape,
+) -> Result<()> {
+    let findings = report["findings"].as_array().cloned().unwrap_or_default();
+    let all: HashSet<String> = findings
+        .iter()
+        .filter_map(|finding| finding["fingerprint"].as_str().map(str::to_string))
+        .collect();
+    if args.write_baseline || args.update_baseline {
+        let Some(path) = resolve_baseline_path(args) else {
+            anyhow::bail!("baseline writing is disabled");
+        };
+        let mut output = if args.update_baseline {
+            baseline
+                .as_ref()
+                .map(|entry| entry.fingerprints.clone())
+                .unwrap_or_default()
+        } else {
+            HashSet::new()
+        };
+        output.extend(all);
+        write_baseline(&path, &output)?;
+        report["baseline"] = json!({
+            "path": path.display().to_string(),
+            "written": output.len()
+        });
+        return Ok(());
+    }
+    let Some(baseline) = baseline else {
+        return Ok(());
+    };
+    let suppressed = baseline_filter(report, &baseline);
+    report["baseline"] = json!({
+        "path": baseline.path.display().to_string(),
+        "suppressed": suppressed
+    });
+    refresh_summary(report);
+    let findings = report["findings"].as_array().cloned().unwrap_or_default();
+    report["perState"] = json!(per_state_report(&findings, args, first));
+    Ok(())
+}
+
+fn apply_source_baseline(
+    report: &mut Value,
+    args: &Args,
+    baseline: Option<Baseline>,
+) -> Result<()> {
+    let findings = report["findings"].as_array().cloned().unwrap_or_default();
+    let all: HashSet<String> = findings
+        .iter()
+        .filter_map(|finding| finding["fingerprint"].as_str().map(str::to_string))
+        .collect();
+    if args.write_baseline || args.update_baseline {
+        let Some(path) = resolve_baseline_path(args) else {
+            anyhow::bail!("baseline writing is disabled");
+        };
+        let mut output = if args.update_baseline {
+            baseline
+                .as_ref()
+                .map(|entry| entry.fingerprints.clone())
+                .unwrap_or_default()
+        } else {
+            HashSet::new()
+        };
+        output.extend(all);
+        write_baseline(&path, &output)?;
+        report["baseline"] = json!({
+            "path": path.display().to_string(),
+            "written": output.len()
+        });
+        return Ok(());
+    }
+    let Some(baseline) = baseline else {
+        return Ok(());
+    };
+    let suppressed = baseline_filter(report, &baseline);
+    report["baseline"] = json!({
+        "path": baseline.path.display().to_string(),
+        "suppressed": suppressed
+    });
+    refresh_summary(report);
+    Ok(())
+}
+
 fn init_mode(argv: &[String]) -> Result<i32> {
     let mut target = PathBuf::from(".");
     for arg in argv {
@@ -875,6 +1118,7 @@ const INIT_README: &str = "\
 - `rules.json` is optional. Named rules overlay by id; structural rules append.
 - Rules resolve from `--rules`, the nearest `.opal/rules.json`, then `~/.opal/rules.json`.
 - Design layers from `--design`, the nearest `.opal/design.json`, then `~/.opal/design.json`.
+- `baseline.json` stores accepted finding fingerprints when you run `--write-baseline`.
 
 Run:
 
@@ -925,7 +1169,7 @@ fn pack_mode(argv: &[String]) -> Result<i32> {
 
 fn audit_mode(mut args: Args) -> Result<i32> {
     if let Some(root) = &args.source {
-        return source_mode(root, args.pretty, args.source_all);
+        return source_mode(root, &args);
     }
 
     let design_sources = resolve_design_sources(args.design.as_deref());
@@ -954,6 +1198,12 @@ fn audit_mode(mut args: Args) -> Result<i32> {
         .iter()
         .map(|(path, _)| path.display().to_string())
         .collect();
+
+    let baseline_path = resolve_baseline_path(&args);
+    let baseline = load_baseline(
+        baseline_path.as_deref(),
+        args.write_baseline || args.update_baseline,
+    )?;
 
     let mut rule_notes = Vec::new();
     let rule_sources = resolve_rules_sources(args.rules.as_deref());
@@ -1031,12 +1281,17 @@ fn audit_mode(mut args: Args) -> Result<i32> {
     if let Some(path) = write_design_if_needed(&args, runs[0].scrape.inferred.as_ref())? {
         report["designFile"] = json!(path);
     }
+    apply_audit_baseline(&mut report, &args, baseline, &runs[0].scrape)?;
     drop(session);
 
     if args.pretty {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         println!("{}", serde_json::to_string(&report)?);
+    }
+
+    if args.write_baseline || args.update_baseline {
+        return Ok(0);
     }
 
     let has_error = report["findings"]
@@ -1616,6 +1871,7 @@ fn normalize_findings(findings: &mut [Value], generic: bool) {
         if generic && finding["severity"].is_null() {
             finding["severity"] = json!("advisory");
         }
+        finding["fingerprint"] = json!(finding_fingerprint(finding));
     }
 }
 
@@ -1691,6 +1947,7 @@ fn build_report(
             "design": design_sources,
             "designOrigin": design_origins
         },
+        "baseline": Value::Null,
         "state": args.state,
         "theme": args.theme,
         "themes": if both_themes { json!(themes) } else { Value::Null },
@@ -3753,7 +4010,62 @@ const SOURCE_RULES: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
-fn source_mode(root: &Path, pretty: bool, all: bool) -> Result<i32> {
+fn parse_ignore_ids(raw: &str) -> HashSet<String> {
+    let cleaned = raw.trim_start_matches(|c: char| c == ':' || c.is_whitespace());
+    cleaned
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .map(|value| {
+            value
+                .trim_matches(|c: char| c == '*' || c == '/' || c == '>' || c == '-')
+                .to_ascii_lowercase()
+        })
+        .filter(|value| {
+            !value.is_empty()
+                && !value.starts_with("--")
+                && value
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '*')
+        })
+        .collect()
+}
+
+fn source_suppressions(content: &str) -> (HashMap<usize, HashSet<String>>, HashSet<String>) {
+    let mut lines: HashMap<usize, HashSet<String>> = HashMap::new();
+    let mut file = HashSet::new();
+    for (index, line) in content.lines().enumerate() {
+        let lower = line.to_ascii_lowercase();
+        let Some(position) = lower.find("opal-ignore") else {
+            continue;
+        };
+        let rest = &line[position + "opal-ignore".len()..];
+        let rest_lower = rest.to_ascii_lowercase();
+        let (scope, rest) = if rest_lower.starts_with("-file") {
+            ("file", &rest["-file".len()..])
+        } else if rest_lower.starts_with("-next-line") {
+            ("next", &rest["-next-line".len()..])
+        } else {
+            ("line", rest)
+        };
+        let ids = parse_ignore_ids(rest);
+        if ids.is_empty() {
+            continue;
+        }
+        match scope {
+            "file" => file.extend(ids),
+            "next" => lines
+                .entry(index + 2)
+                .or_insert_with(HashSet::new)
+                .extend(ids),
+            _ => lines
+                .entry(index + 1)
+                .or_insert_with(HashSet::new)
+                .extend(ids),
+        }
+    }
+    (lines, file)
+}
+
+fn source_mode(root: &Path, args: &Args) -> Result<i32> {
     if !root.is_dir() {
         anyhow::bail!("source directory does not exist: {}", root.display());
     }
@@ -3768,10 +4080,16 @@ fn source_mode(root: &Path, pretty: bool, all: bool) -> Result<i32> {
             ))
         })
         .collect::<Result<_>>()?;
+    let baseline_path = resolve_baseline_path(args);
+    let baseline = load_baseline(
+        baseline_path.as_deref(),
+        args.write_baseline || args.update_baseline,
+    )?;
 
     let mut findings = Vec::new();
+    let mut suppressed = 0usize;
     let mut scanned = 0usize;
-    for path in source_files(root, all)
+    for path in source_files(root, args.source_all)
         .iter()
         .filter(|path| is_ui_file(path))
     {
@@ -3779,6 +4097,7 @@ fn source_mode(root: &Path, pretty: bool, all: bool) -> Result<i32> {
             continue;
         };
         scanned += 1;
+        let (line_ignores, file_ignores) = source_suppressions(&content);
         let relative = path
             .strip_prefix(root)
             .unwrap_or(path)
@@ -3798,19 +4117,32 @@ fn source_mode(root: &Path, pretty: bool, all: bool) -> Result<i32> {
                 if token_file && *id == "raw-color" {
                     continue;
                 }
-                if regex.is_match(line) {
-                    findings.push(json!({
-                        "check": id,
-                        "layer": "source",
-                        "severity": severity,
-                        "file": relative,
-                        "line": line_number + 1,
-                        "message": message,
-                        "evidence": {
-                            "text": line.trim().chars().take(160).collect::<String>()
-                        }
-                    }));
+                if !regex.is_match(line) {
+                    continue;
                 }
+                let ignored = file_ignores.contains(*id)
+                    || file_ignores.contains("*")
+                    || line_ignores
+                        .get(&(line_number + 1))
+                        .map(|set| set.contains(*id) || set.contains("*"))
+                        .unwrap_or(false);
+                if ignored {
+                    suppressed += 1;
+                    continue;
+                }
+                let mut finding = json!({
+                    "check": id,
+                    "layer": "source",
+                    "severity": severity,
+                    "file": relative,
+                    "line": line_number + 1,
+                    "message": message,
+                    "evidence": {
+                        "text": line.trim().chars().take(160).collect::<String>()
+                    }
+                });
+                finding["fingerprint"] = json!(finding_fingerprint(&finding));
+                findings.push(finding);
             }
         }
     }
@@ -3831,24 +4163,31 @@ fn source_mode(root: &Path, pretty: bool, all: bool) -> Result<i32> {
         by_check.insert(name, json!(count + 1));
     }
 
-    let report = json!({
+    let mut report = json!({
         "tool": "ui-probe",
         "version": env!("CARGO_PKG_VERSION"),
         "schemaVersion": 1,
         "mode": "source",
         "root": root,
+        "baseline": Value::Null,
         "summary": {
             "findings": findings.len(),
+            "suppressed": suppressed,
             "files": scanned,
             "byCheck": by_check
         },
         "findings": findings
     });
+    apply_source_baseline(&mut report, args, baseline)?;
 
-    if pretty {
+    if args.pretty {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         println!("{}", serde_json::to_string(&report)?);
+    }
+
+    if args.write_baseline || args.update_baseline {
+        return Ok(0);
     }
 
     let has_error = report["findings"]
@@ -4591,6 +4930,20 @@ fn descendant_any(elements: &[Value], index: usize, matches: &HashSet<usize>) ->
     false
 }
 
+fn element_ignored(element: &Value, rule: &str) -> bool {
+    element["ignoreRules"]
+        .as_array()
+        .map(|list| {
+            list.iter().any(|value| {
+                value
+                    .as_str()
+                    .map(|entry| entry == rule || entry == "*")
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
 fn rule_findings(
     rules: &RuleSet,
     oracle: &Oracle,
@@ -4630,6 +4983,9 @@ fn rule_findings(
                 continue;
             };
             if !element["visible"].as_bool().unwrap_or(false) {
+                continue;
+            }
+            if element_ignored(element, &rule.name) {
                 continue;
             }
             let mut violated: Option<(String, String, String)> = None;
@@ -4720,7 +5076,10 @@ fn rule_findings(
         };
         match rule.id.as_str() {
             "nested-cards" => {
-                for element in &elements {
+                for element in elements
+                    .iter()
+                    .filter(|element| !element_ignored(element, &rule.id))
+                {
                     if !element["visible"].as_bool().unwrap_or(false) {
                         continue;
                     }
@@ -4741,7 +5100,10 @@ fn rule_findings(
                 let require = rule.params["requireUppercaseOrTracking"]
                     .as_bool()
                     .unwrap_or(true);
-                for element in &elements {
+                for element in elements
+                    .iter()
+                    .filter(|element| !element_ignored(element, &rule.id))
+                {
                     if !element["visible"].as_bool().unwrap_or(false)
                         || !element["hasText"].as_bool().unwrap_or(false)
                     {
@@ -4772,7 +5134,10 @@ fn rule_findings(
             }
             "line-length" => {
                 let max = param_f64(&rule.params, "maxCh", 75.0);
-                for element in &elements {
+                for element in elements
+                    .iter()
+                    .filter(|element| !element_ignored(element, &rule.id))
+                {
                     if !element["visible"].as_bool().unwrap_or(false)
                         || !element["hasText"].as_bool().unwrap_or(false)
                         || element["textLength"].as_u64().unwrap_or(0) < 120
@@ -4796,7 +5161,10 @@ fn rule_findings(
             }
             "extreme-negative-tracking" => {
                 let min = param_f64(&rule.params, "minEm", -0.04);
-                for element in &elements {
+                for element in elements
+                    .iter()
+                    .filter(|element| !element_ignored(element, &rule.id))
+                {
                     if !element["visible"].as_bool().unwrap_or(false) {
                         continue;
                     }
@@ -4823,7 +5191,10 @@ fn rule_findings(
             "gpt-thin-border-wide-shadow" => {
                 let min_blur = param_f64(&rule.params, "blurPx", 8.0);
                 let length = Regex::new(r"(-?\d*\.?\d+)px").unwrap();
-                for element in &elements {
+                for element in elements
+                    .iter()
+                    .filter(|element| !element_ignored(element, &rule.id))
+                {
                     if !element["visible"].as_bool().unwrap_or(false) {
                         continue;
                     }
@@ -4855,7 +5226,10 @@ fn rule_findings(
                 }
             }
             "side-tab" => {
-                for element in &elements {
+                for element in elements
+                    .iter()
+                    .filter(|element| !element_ignored(element, &rule.id))
+                {
                     if !element["visible"].as_bool().unwrap_or(false) {
                         continue;
                     }
@@ -4917,7 +5291,10 @@ fn rule_findings(
                 }
             }
             "bounce-easing" => {
-                for element in &elements {
+                for element in elements
+                    .iter()
+                    .filter(|element| !element_ignored(element, &rule.id))
+                {
                     if !element["visible"].as_bool().unwrap_or(false) {
                         continue;
                     }

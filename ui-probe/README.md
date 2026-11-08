@@ -35,7 +35,17 @@ The design source layers from `--design`, the nearest `.opal/design.json`, then 
 
 ## Allowlist
 
-`--allow <check-id>[,<check-id>]` suppresses named checks. Use it when the brief earns a generic pattern, for example `--allow nested-cards,kicker-above-heading`.
+`--allow <check-id>[,<check-id>]` suppresses named checks globally. Use it when the brief earns a generic pattern, for example `--allow nested-cards,kicker-above-heading`.
+
+## Baseline
+
+Each finding carries a stable `fingerprint`. `--write-baseline` writes the current fingerprints to `.opal/baseline.json` and exits `0`. `--update-baseline` adds new fingerprints to an existing baseline. Later runs suppress matching findings and report the count under `baseline.suppressed`.
+
+The default baseline is the nearest `.opal/baseline.json`. `--baseline <path>` selects an explicit file; `--no-baseline` disables discovery. Baselines apply to `audit` and `source`.
+
+## Suppressions
+
+Source files accept `opal-ignore <id>` on the matching line, `opal-ignore-next-line <id>`, and `opal-ignore-file <id>`. Rendered pages accept `data-opal-ignore="<id>"` on the element or an ancestor. Use `*` to suppress every rule finding for that element or line.
 
 ## Chromium
 
