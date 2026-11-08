@@ -20,6 +20,10 @@ The legacy `--url` and `--source` flags remain accepted.
 
 The browser capture records every element, including hidden ones, with `visible`, `parentIndex`, and a stable `data-ui-probe` marker. Colours are normalized through a canvas `fillStyle` round-trip. A colour that cannot be normalized is listed under `unverified`.
 
+## Runtime diagnostics
+
+The probe captures console errors and warnings, uncaught page errors, and failed or 4xx/5xx network requests as `console-error`, `console-warning`, `page-error`, and `network-error` findings. Capture waits for fonts and images. `--freeze-animations` disables animations and transitions before sampling.
+
 ## Rules
 
 Rules resolve from `--rules`, the nearest `.opal/rules.json` found from the working directory to the git root, then `~/.opal/rules.json`. Every existing file is loaded. Named rules overlay by id: the first source that names an id wins. Structural rules append from every source. The report lists the loaded files under `sources.rules` and tags each rule finding with `ruleSource`.

@@ -120,6 +120,12 @@ for check in page-overflow missing-lang heading-skip missing-name target-size po
 done
 jqr generic-visible "$tmp/generic.json" '.summary.captured >= .summary.elements'
 
+run diagnostics 2 "$tmp/diagnostics.json" --url "$(file_url diagnostics.html)" --no-sandbox --pretty
+for check in console-error page-error network-error; do
+  jqr "diagnostics-$check" "$tmp/diagnostics.json" "[.findings[].check] | index(\"$check\") != null"
+done
+jqr diagnostics-layer "$tmp/diagnostics.json" '[.findings[] | select(.check == "page-error") | .layer] | all(. == "runtime")'
+
 run disclosure 2 "$tmp/disclosure.json" --url "$(file_url disclosure.html)" --no-sandbox --expand --pretty
 jqr disclosure-expanded "$tmp/disclosure.json" '.states.expanded | length == 1'
 jqr disclosure-skip "$tmp/disclosure.json" '[.states.skipped[] | select(.reason == "postcondition-not-met")] | length == 1'

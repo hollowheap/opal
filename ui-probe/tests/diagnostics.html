@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Diagnostics fixture</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #ffffff; color: #1a1a1a; font-family: system-ui, sans-serif; }
+      a, button { min-width: 44px; min-height: 44px; padding: 8px 16px; }
+      a:hover, button:hover { background: #f2f2f2; }
+      a:focus-visible, button:focus-visible { outline: 2px solid #1a1a1a; }
+      ::selection { background: #d0d0d0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Runtime diagnostics</h1>
+      <p><a href="#main">A link</a></p>
+      <img src="missing-image.png" alt="Missing probe image" />
+      <script src="missing-script.js"></script>
+      <script>
+        console.error("probe console error");
+        setTimeout(() => {
+          throw new Error("probe page error");
+        }, 50);
+      </script>
+    </main>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use headless_chrome::browser::tab::Tab;
-use headless_chrome::protocol::cdp::Emulation;
+use headless_chrome::protocol::cdp::types::Event;
+use headless_chrome::protocol::cdp::{Emulation, Log};
 use headless_chrome::Browser;
 use regex::Regex;
 use serde_json::{json, Value};
@@ -8,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const JS: &str = r##"
@@ -585,6 +587,7 @@ struct Args {
     write_baseline: bool,
     update_baseline: bool,
     no_baseline: bool,
+    freeze_animations: bool,
     format: OutputFormat,
 }
 
@@ -624,6 +627,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
     let mut write_baseline = false;
     let mut update_baseline = false;
     let mut no_baseline = false;
+    let mut freeze_animations = false;
     let mut format = OutputFormat::Json;
     let mut chrome = std::env::var("UI_PROBE_CHROME")
         .or_else(|_| std::env::var("CHROME"))
@@ -690,6 +694,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
             "--write-baseline" => write_baseline = true,
             "--update-baseline" => update_baseline = true,
             "--no-baseline" => no_baseline = true,
+            "--freeze-animations" => freeze_animations = true,
             "--format" => {
                 let value = argv.next().context("--format needs a value")?;
                 format = match value.as_str() {
@@ -719,7 +724,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
             "--pretty" => pretty = true,
             "--help" | "-h" => {
                 println!(
-                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH] [--json]\n       ui-probe doctor [--json]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n         --baseline PATH --write-baseline --update-baseline --no-baseline\n         --format json|sarif|markdown|github\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
+                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH] [--json]\n       ui-probe doctor [--json]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n         --baseline PATH --write-baseline --update-baseline --no-baseline\n         --freeze-animations --format json|sarif|markdown|github\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
                 );
                 std::process::exit(0);
             }
@@ -758,6 +763,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
         write_baseline,
         update_baseline,
         no_baseline,
+        freeze_animations,
         format,
     })
 }
@@ -968,6 +974,7 @@ fn hash_text(text: &str) -> String {
 }
 
 fn finding_fingerprint(finding: &Value) -> String {
+    let check = finding["check"].as_str().unwrap_or("");
     let mut parts = Vec::new();
     for key in [
         "check", "layer", "selector", "property", "message", "file", "line",
@@ -980,6 +987,12 @@ fn finding_fingerprint(finding: &Value) -> String {
                 other => parts.push(other.to_string()),
             }
         }
+    }
+    if matches!(
+        check,
+        "console-error" | "console-warning" | "page-error" | "network-error"
+    ) {
+        parts.push(finding["evidence"].to_string());
     }
     hash_text(&parts.join("\u{1f}"))
 }
@@ -1766,6 +1779,11 @@ fn launch_browser(args: &Args) -> Result<BrowserSession> {
         .unwrap_or(0);
     let profile = std::env::temp_dir().join(format!("ui-probe-{}-{stamp}", std::process::id()));
     std::fs::create_dir_all(&profile).context("create chromium profile directory")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o700));
+    }
 
     let mut command = Command::new(&chrome);
     command
@@ -1899,6 +1917,92 @@ struct Scrape {
     skipped: Vec<Value>,
 }
 
+#[derive(Default)]
+struct PageDiagnostics {
+    console: Vec<Value>,
+    page_errors: Vec<Value>,
+    network: Vec<Value>,
+    requests: HashMap<String, String>,
+}
+
+fn runtime_findings(diagnostics: &PageDiagnostics) -> Vec<Value> {
+    let mut findings = Vec::new();
+    let mut seen = HashSet::new();
+    let mut push = |check: &str, severity: &str, message: String, evidence: Value| {
+        let key = format!("{check}|{message}|{evidence}");
+        if seen.insert(key) {
+            findings.push(json!({
+                "check": check,
+                "layer": "runtime",
+                "severity": severity,
+                "message": message,
+                "evidence": evidence
+            }));
+        }
+    };
+    for entry in &diagnostics.console {
+        let level = entry["level"].as_str().unwrap_or("warning");
+        let text = entry["text"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(240)
+            .collect::<String>();
+        if level == "error" {
+            push(
+                "console-error",
+                "P2",
+                format!("console error: {text}"),
+                entry.clone(),
+            );
+        } else {
+            push(
+                "console-warning",
+                "P3",
+                format!("console warning: {text}"),
+                entry.clone(),
+            );
+        }
+    }
+    for entry in &diagnostics.page_errors {
+        let text = entry["text"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(240)
+            .collect::<String>();
+        push(
+            "page-error",
+            "P2",
+            format!("page error: {text}"),
+            entry.clone(),
+        );
+    }
+    for entry in &diagnostics.network {
+        let url = entry["url"].as_str().unwrap_or("");
+        let text = entry["text"].as_str().unwrap_or("");
+        if entry["kind"].as_str() == Some("failed") {
+            push(
+                "network-error",
+                "P2",
+                format!("network failed: {url} ({text})"),
+                entry.clone(),
+            );
+        } else {
+            let status = entry["status"].as_u64().unwrap_or(0);
+            let severity = if status >= 500 { "P2" } else { "P3" };
+            push(
+                "network-error",
+                severity,
+                format!("network {status}: {url}"),
+                entry.clone(),
+            );
+        }
+    }
+    findings.truncate(100);
+    findings
+}
+
 fn scrape_once(
     browser: &Browser,
     args: &Args,
@@ -1911,6 +2015,90 @@ fn scrape_once(
 ) -> Result<Scrape> {
     let tab = browser.new_tab().context("open tab")?;
     tab.set_default_timeout(args.timeout);
+    let diagnostics = Arc::new(Mutex::new(PageDiagnostics::default()));
+    tab.enable_log().context("enable browser log")?;
+    tab.enable_runtime().context("enable browser runtime")?;
+    let log_events = Arc::clone(&diagnostics);
+    tab.add_event_listener(Arc::new(move |event: &Event| match event {
+        Event::LogEntryAdded(event) => {
+            let entry = &event.params.entry;
+            if matches!(
+                entry.level,
+                Log::LogEntryLevel::Error | Log::LogEntryLevel::Warning
+            ) {
+                let level = if entry.level == Log::LogEntryLevel::Error {
+                    "error"
+                } else {
+                    "warning"
+                };
+                log_events.lock().unwrap().console.push(json!({
+                    "level": level,
+                    "text": entry.text,
+                    "source": format!("{:?}", entry.source).to_lowercase(),
+                    "url": entry.url,
+                    "line": entry.line_number
+                }));
+            }
+        }
+        Event::RuntimeExceptionThrown(event) => {
+            let details = &event.params.exception_details;
+            let text = details
+                .exception
+                .as_ref()
+                .and_then(|exception| exception.description.clone())
+                .unwrap_or_else(|| details.text.clone());
+            log_events.lock().unwrap().page_errors.push(json!({
+                "text": text,
+                "url": details.url,
+                "line": details.line_number + 1
+            }));
+        }
+        Event::NetworkRequestWillBeSent(event) => {
+            log_events.lock().unwrap().requests.insert(
+                event.params.request_id.clone(),
+                event.params.request.url.clone(),
+            );
+        }
+        Event::NetworkLoadingFailed(event) => {
+            if event.params.canceled.unwrap_or(false)
+                || event.params.error_text.contains("ERR_ABORTED")
+            {
+                return;
+            }
+            let mut diagnostics = log_events.lock().unwrap();
+            let url = diagnostics
+                .requests
+                .get(&event.params.request_id)
+                .cloned()
+                .unwrap_or_default();
+            if url.starts_with("data:") || url.ends_with("/favicon.ico") {
+                return;
+            }
+            diagnostics.network.push(json!({
+                "kind": "failed",
+                "status": 0,
+                "url": url,
+                "text": event.params.error_text
+            }));
+        }
+        _ => {}
+    }))?;
+    let response_events = Arc::clone(&diagnostics);
+    tab.register_response_handling(
+        "ui-probe",
+        Box::new(move |response, _body| {
+            let status = response.response.status;
+            let url = &response.response.url;
+            if status >= 400 && !url.starts_with("data:") && !url.ends_with("/favicon.ico") {
+                response_events.lock().unwrap().network.push(json!({
+                    "kind": "status",
+                    "status": status,
+                    "url": url,
+                    "text": response.response.status_text
+                }));
+            }
+        }),
+    )?;
     tab.call_method(Emulation::SetDeviceMetricsOverride {
         width: viewport.0,
         height: viewport.1,
@@ -2078,6 +2266,10 @@ fn scrape_once(
     }
 
     let mut extra = stylesheet_checks(&baseline, &sheet_text);
+    {
+        let diagnostics = diagnostics.lock().unwrap();
+        extra.extend(runtime_findings(&diagnostics));
+    }
 
     let (motion, motion_findings) = motion_evidence(&baseline, &sheet_text, ruleset.is_none());
     extra.extend(motion_findings);
@@ -5758,6 +5950,35 @@ fn rule_findings(
     findings
 }
 
+fn settle(tab: &Tab, args: &Args) -> Result<()> {
+    let wait = r#"(async () => {
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  const images = Array.from(document.images || []).filter((image) => !image.complete);
+  if (images.length > 0) {
+    await Promise.race([
+      Promise.all(images.map((image) => new Promise((resolve) => {
+        image.addEventListener("load", resolve, { once: true });
+        image.addEventListener("error", resolve, { once: true });
+      }))),
+      new Promise((resolve) => setTimeout(resolve, 2000))
+    ]);
+  }
+  return true;
+})()"#;
+    let _ = tab.evaluate(wait, true);
+    if args.freeze_animations {
+        let freeze = r#"(() => {
+  const style = document.createElement("style");
+  style.setAttribute("data-ui-probe-freeze", "");
+  style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }";
+  (document.head || document.documentElement).appendChild(style);
+  return true;
+})()"#;
+        let _ = tab.evaluate(freeze, true);
+    }
+    Ok(())
+}
+
 fn load(tab: &Tab, args: &Args) -> Result<()> {
     let url = args.url.as_deref().context("--url is required")?;
     tab.navigate_to(url)
@@ -5768,6 +5989,7 @@ fn load(tab: &Tab, args: &Args) -> Result<()> {
             .with_context(|| format!("wait for {selector}"))?;
     }
     std::thread::sleep(Duration::from_millis(400));
+    settle(tab, args)?;
     Ok(())
 }
 

@@ -51,6 +51,9 @@ Run `~/.opal/bin/ui-probe audit <url> [flags]` before judging. A rendered review
 
 Exercise preload, loaded, empty, error, disabled, collapsed, and expanded; snapshot only the states the diff touches.
 
+- Treat `console-error`, `page-error`, and `network-error` findings as real defects; warnings are advisory.
+- Use `--freeze-animations` when motion makes geometry unstable, and rerun without it for motion checks.
+
 - Every interactive control needs an accessible name, visible focus indicator, and keyboard trigger.
 - Widget roles carry their states: `aria-expanded`, `aria-controls`, `aria-selected`, `aria-pressed`, `aria-current`. Async status uses a live region. No ARIA overrides native semantics without cause.
 - Touch targets and text contrast meet the thresholds in the bundled rules pack and the report evidence.
