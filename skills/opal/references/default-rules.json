@@ -53,15 +53,6 @@
       }
     },
     {
-      "id": "gpt-thin-border-wide-shadow",
-      "enabled": true,
-      "severity": "advisory",
-      "layer": "layout",
-      "params": {
-        "blurPx": 8
-      }
-    },
-    {
       "id": "side-tab",
       "enabled": true,
       "severity": "advisory",

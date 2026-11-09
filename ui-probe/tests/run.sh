@@ -109,6 +109,7 @@ generic_url=$(file_url generic.html)
 design_url=$(file_url design-drift.html)
 dtcg="$here/design-dtcg.json"
 pack="$root/skills/opal/references/default-rules.json"
+jqr default-pack-scrub "$pack" '[.rules[].id] | index("gpt-thin-border-wide-shadow") | not'
 
 run clean 0 "$tmp/clean.json" --url "$clean_url" --no-sandbox --pretty
 jqr clean-empty "$tmp/clean.json" '.findings == []'
