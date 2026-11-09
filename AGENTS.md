@@ -6,6 +6,9 @@
 - `heading-rhythm` is the fixed-range law carried by a surface pack. The engine's relational law is `heading-spacing-relation`: space above a heading must exceed space below it. They are separate laws and keep separate ids.
 - The default pack never carries `gpt-thin-border-wide-shadow`, under any id.
 - The capture layer is the playwright-rs driver over Chromium. Page settling waits for DOM quiet, fonts, and pending images, then pins animations to their starting phase before sampling; do not replace that with a fixed sleep alone.
+- Capture changes are verified in this order: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, rebuild the debug binary, run `ui-probe/tests/run.sh`, rebuild/install with `scripts/compile.sh`, then run `artifacts/scripts/determinism-check.sh` on a fixed page.
+- The Nix package pins its own Playwright Node driver; do not make the packaged binary depend on a developer's user cache.
+- Repeatable checks live in `artifacts/scripts/` rather than ad-hoc `/tmp` scripts.
 
 ## History
 
