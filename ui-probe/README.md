@@ -20,6 +20,8 @@ The legacy `--url` and `--source` flags remain accepted.
 
 The browser capture records every element, including hidden ones, with `visible`, `parentIndex`, and a stable `data-ui-probe` marker. Colours are normalized through a canvas `fillStyle` round-trip, so modern syntaxes such as `oklch()` and `color-mix()` resolve to rgba. A colour that cannot be normalized is listed under `unverified`. Iframe and closed-shadow content is not sampled; both are reported under `unverified`.
 
+Capture runs through the playwright-rs driver over the Chromium DevTools endpoint. Settling waits for DOM quiet, fonts, and images, then pins CSS animations to their starting phase before sampling; findings are sorted by severity and stable evidence keys. That is what makes the same page produce the same JSON across runs.
+
 ## Expanded checks
 
 The engine also runs fixed advisory checks for page health, geometry, material, typography, motion, and content cadence. Findings carry the measured values in `evidence`. Use `--allow`, inline suppressions, or a baseline to settle an accepted pattern.
@@ -36,7 +38,7 @@ Structural rules use CSS property names, `ancestors`/`descendants` constraints, 
 
 A pack can list `extends` as a path or array of paths. Relative paths resolve from the referring pack. Extended packs load after the pack that names them. Cycles and missing files exit `1`. Packs may carry `$schema: "./rules.schema.json"` for editor validation; the schema lives beside the default pack.
 
-Registry ids: `nested-cards`, `kicker-above-heading`, `line-length`, `extreme-negative-tracking`, `gpt-thin-border-wide-shadow`, `side-tab`, `em-dash-overuse`, `marketing-buzzword`, `bounce-easing`.
+Registry ids: `nested-cards`, `kicker-above-heading`, `line-length`, `extreme-negative-tracking`, `gpt-thin-border-wide-shadow`, `side-tab`, `em-dash-overuse`, `marketing-buzzword`, `bounce-easing`. The shipped default pack omits `gpt-thin-border-wide-shadow` intentionally; an explicit project pack may still select the engine id.
 
 Every state is evaluated against the pack. A finding carries `state`, `layer`, and, when merged across runs, `states`, `themes`, and `viewports`.
 

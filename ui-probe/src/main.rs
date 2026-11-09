@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
-use headless_chrome::browser::tab::Tab;
-use headless_chrome::protocol::cdp::types::Event;
-use headless_chrome::protocol::cdp::{Emulation, Log};
-use headless_chrome::Browser;
+use playwright_rs::{
+    Browser, ColorScheme, ConnectOverCdpOptions, EmulateMediaOptions, Page, Playwright, Viewport,
+};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -1715,7 +1714,6 @@ fn audit_mode(mut args: Args) -> Result<i32> {
     };
 
     let session = launch_browser(&args)?;
-    let browser = &session.browser;
     let both_themes = args.theme.as_deref() == Some("both");
     let sweep = args.viewports.len() > 1;
     let mut runs: Vec<Run> = Vec::new();
@@ -1728,7 +1726,7 @@ fn audit_mode(mut args: Args) -> Result<i32> {
                     theme: Some(theme.to_string()),
                     viewport: label.clone(),
                     scrape: scrape_once(
-                        browser,
+                        &session,
                         &args,
                         ScrapeContext {
                             theme: Some(theme),
@@ -1747,7 +1745,7 @@ fn audit_mode(mut args: Args) -> Result<i32> {
                 theme: theme.clone(),
                 viewport: label,
                 scrape: scrape_once(
-                    browser,
+                    &session,
                     &args,
                     ScrapeContext {
                         theme: theme.as_deref(),
@@ -1801,6 +1799,8 @@ fn audit_mode(mut args: Args) -> Result<i32> {
 }
 
 struct BrowserSession {
+    runtime: tokio::runtime::Runtime,
+    _playwright: Playwright,
     browser: Browser,
     child: std::process::Child,
     profile: PathBuf,
@@ -1808,6 +1808,9 @@ struct BrowserSession {
 
 impl Drop for BrowserSession {
     fn drop(&mut self) {
+        let _ = self.runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(2), self.browser.close()).await
+        });
         let _ = self.child.kill();
         let _ = self.child.wait();
         let _ = std::fs::remove_dir_all(&self.profile);
@@ -1957,16 +1960,35 @@ fn launch_browser(args: &Args) -> Result<BrowserSession> {
         }
     }
 
-    let browser = match Browser::connect(endpoint.context("chromium gave no DevTools endpoint")?) {
-        Ok(browser) => browser,
+    let endpoint = endpoint.context("chromium gave no DevTools endpoint")?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("create async runtime")?;
+    let connected = runtime.block_on(async {
+        let playwright = Playwright::launch()
+            .await
+            .context("launch playwright driver")?;
+        let options = ConnectOverCdpOptions::new().timeout(args.launch_timeout.as_millis() as f64);
+        let browser = playwright
+            .chromium()
+            .connect_over_cdp(&endpoint, Some(options))
+            .await
+            .context("connect to chromium")?;
+        Ok::<_, anyhow::Error>((playwright, browser))
+    });
+    let (playwright, browser) = match connected {
+        Ok(value) => value,
         Err(error) => {
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_dir_all(&profile);
-            return Err(error).context("connect to chromium");
+            return Err(error);
         }
     };
     Ok(BrowserSession {
+        runtime,
+        _playwright: playwright,
         browser,
         child,
         profile,
@@ -1997,7 +2019,6 @@ struct PageDiagnostics {
     console: Vec<Value>,
     page_errors: Vec<Value>,
     network: Vec<Value>,
-    requests: HashMap<String, String>,
 }
 
 fn runtime_findings(diagnostics: &PageDiagnostics) -> Vec<Value> {
@@ -2087,133 +2108,136 @@ struct ScrapeContext<'a> {
     rule_notes: &'a [Value],
 }
 
-fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Result<Scrape> {
+fn scrape_once(
+    session: &BrowserSession,
+    args: &Args,
+    context: ScrapeContext<'_>,
+) -> Result<Scrape> {
+    session
+        .runtime
+        .block_on(scrape_once_async(&session.browser, args, context))
+}
+
+async fn scrape_once_async(
+    browser: &Browser,
+    args: &Args,
+    context: ScrapeContext<'_>,
+) -> Result<Scrape> {
     let theme = context.theme;
     let viewport = context.viewport;
     let ruleset = context.ruleset;
     let design = context.design;
     let design_notes = context.design_notes;
     let rule_notes = context.rule_notes;
-    let tab = browser.new_tab().context("open tab")?;
-    tab.set_default_timeout(args.timeout);
+    let tab = browser.new_page().await.context("open tab")?;
+    tab.set_default_timeout(args.timeout.as_millis() as f64)
+        .await;
     let diagnostics = Arc::new(Mutex::new(PageDiagnostics::default()));
-    tab.enable_log().context("enable browser log")?;
-    tab.enable_runtime().context("enable browser runtime")?;
     let log_events = Arc::clone(&diagnostics);
-    tab.add_event_listener(Arc::new(move |event: &Event| match event {
-        Event::LogEntryAdded(event) => {
-            let entry = &event.params.entry;
-            if matches!(
-                entry.level,
-                Log::LogEntryLevel::Error | Log::LogEntryLevel::Warning
-            ) {
-                let level = if entry.level == Log::LogEntryLevel::Error {
-                    "error"
-                } else {
-                    "warning"
-                };
+    tab.on_console(move |message| {
+        let log_events = Arc::clone(&log_events);
+        let level = message.type_().to_string();
+        let text = message.text().to_string();
+        let location = message.location().clone();
+        async move {
+            if level == "error" || level == "warning" {
                 log_events.lock().unwrap().console.push(json!({
                     "level": level,
-                    "text": entry.text,
-                    "source": format!("{:?}", entry.source).to_lowercase(),
-                    "url": entry.url,
-                    "line": entry.line_number
+                    "text": text,
+                    "source": "console",
+                    "url": location.url,
+                    "line": location.line_number
                 }));
             }
+            Ok(())
         }
-        Event::RuntimeExceptionThrown(event) => {
-            let details = &event.params.exception_details;
-            let text = details
-                .exception
-                .as_ref()
-                .and_then(|exception| exception.description.clone())
-                .unwrap_or_else(|| details.text.clone());
+    })
+    .await
+    .context("enable browser console")?;
+    let log_events = Arc::clone(&diagnostics);
+    tab.on_pageerror(move |text| {
+        let log_events = Arc::clone(&log_events);
+        async move {
             log_events.lock().unwrap().page_errors.push(json!({
                 "text": text,
-                "url": details.url,
-                "line": details.line_number + 1
+                "url": "",
+                "line": 0
             }));
+            Ok(())
         }
-        Event::NetworkRequestWillBeSent(event) => {
-            log_events.lock().unwrap().requests.insert(
-                event.params.request_id.clone(),
-                event.params.request.url.clone(),
-            );
-        }
-        Event::NetworkLoadingFailed(event) => {
-            if event.params.canceled.unwrap_or(false)
-                || event.params.error_text.contains("ERR_ABORTED")
+    })
+    .await
+    .context("enable browser runtime")?;
+    let log_events = Arc::clone(&diagnostics);
+    tab.on_request_failed(move |request| {
+        let log_events = Arc::clone(&log_events);
+        let url = request.url().to_string();
+        let text = request.failure().unwrap_or_default();
+        async move {
+            if url.starts_with("data:")
+                || url.ends_with("/favicon.ico")
+                || text.contains("ERR_ABORTED")
             {
-                return;
+                return Ok(());
             }
-            let mut diagnostics = log_events.lock().unwrap();
-            let url = diagnostics
-                .requests
-                .get(&event.params.request_id)
-                .cloned()
-                .unwrap_or_default();
-            if url.starts_with("data:") || url.ends_with("/favicon.ico") {
-                return;
-            }
-            diagnostics.network.push(json!({
+            log_events.lock().unwrap().network.push(json!({
                 "kind": "failed",
                 "status": 0,
                 "url": url,
-                "text": event.params.error_text
+                "text": text
             }));
+            Ok(())
         }
-        _ => {}
-    }))?;
+    })
+    .await
+    .context("enable browser network")?;
     let response_events = Arc::clone(&diagnostics);
-    tab.register_response_handling(
-        "ui-probe",
-        Box::new(move |response, _body| {
-            let status = response.response.status;
-            let url = &response.response.url;
+    tab.on_response(move |response| {
+        let response_events = Arc::clone(&response_events);
+        let status = response.status();
+        let url = response.url().to_string();
+        let text = response.status_text().to_string();
+        async move {
             if status >= 400 && !url.starts_with("data:") && !url.ends_with("/favicon.ico") {
                 response_events.lock().unwrap().network.push(json!({
                     "kind": "status",
                     "status": status,
                     "url": url,
-                    "text": response.response.status_text
+                    "text": text
                 }));
             }
-        }),
-    )?;
-    tab.call_method(Emulation::SetDeviceMetricsOverride {
+            Ok(())
+        }
+    })
+    .await
+    .context("enable browser responses")?;
+    tab.set_viewport_size(Viewport {
         width: viewport.0,
         height: viewport.1,
-        device_scale_factor: 1.0,
-        mobile: viewport.0 < 600,
-        scale: None,
-        screen_width: Some(viewport.0),
-        screen_height: Some(viewport.1),
-        position_x: None,
-        position_y: None,
-        dont_set_visible_size: None,
-        screen_orientation: None,
-        viewport: None,
-        display_feature: None,
-        device_posture: None,
     })
+    .await
     .context("set device metrics")?;
 
     if let Some(theme) = theme {
-        tab.call_method(Emulation::SetEmulatedMedia {
-            media: None,
-            features: Some(vec![Emulation::MediaFeature {
-                name: "prefers-color-scheme".to_string(),
-                value: theme.to_string(),
-            }]),
-        })
+        let color_scheme = if theme == "dark" {
+            ColorScheme::Dark
+        } else {
+            ColorScheme::Light
+        };
+        tab.emulate_media(Some(
+            EmulateMediaOptions::builder()
+                .color_scheme(color_scheme)
+                .build(),
+        ))
+        .await
         .context("set emulated media")?;
     }
 
-    load(&tab, args)?;
+    load(&tab, args).await?;
     if let Some(rules) = ruleset {
-        validate_selectors(&tab, rules)?;
+        validate_selectors(&tab, rules).await?;
     }
-    let baseline = evaluate(&tab)?;
+    let baseline = evaluate(&tab).await?;
     let has_content = baseline["elements"]
         .as_array()
         .map(|list| {
@@ -2239,7 +2263,7 @@ fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Re
     if !has_content {
         anyhow::bail!("empty capture: the page loaded but no elements were sampled");
     }
-    let sheets = evaluate_js(&tab, STYLES_JS).unwrap_or_else(|error| {
+    let sheets = evaluate_js(&tab, STYLES_JS).await.unwrap_or_else(|error| {
         json!({
             "sheets": [],
             "unreadable": [],
@@ -2250,7 +2274,7 @@ fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Re
 
     let mut findings = with_state(check(&baseline), &args.state);
     if let Some(rules) = ruleset {
-        let oracle = load_oracle(&tab, rules)?;
+        let oracle = load_oracle(&tab, rules).await?;
         findings.extend(with_state(
             rule_findings(rules, &oracle, &baseline, design, &sheet_text),
             &args.state,
@@ -2261,7 +2285,7 @@ fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Re
     let mut skipped: Vec<Value> = Vec::new();
 
     if args.expand {
-        let discovered = evaluate_js(&tab, DISCOVER_JS)?;
+        let discovered = evaluate_js(&tab, DISCOVER_JS).await?;
         for candidate in discovered.as_array().cloned().unwrap_or_default() {
             let name = candidate["name"].as_str().unwrap_or("").trim().to_string();
             let index = candidate["index"].as_u64().unwrap_or(0) as usize;
@@ -2276,14 +2300,15 @@ fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Re
                 continue;
             }
 
-            load(&tab, args)?;
-            let fresh = evaluate_js(&tab, DISCOVER_JS)?;
+            load(&tab, args).await?;
+            let fresh = evaluate_js(&tab, DISCOVER_JS).await?;
             let available = fresh.as_array().map(|list| list.len()).unwrap_or(0);
             if index >= available {
                 skipped.push(json!({ "name": name, "reason": "not-found" }));
                 continue;
             }
-            if !evaluate_js(&tab, &activate_js(index))?
+            if !evaluate_js(&tab, &activate_js(index))
+                .await?
                 .as_bool()
                 .unwrap_or(false)
             {
@@ -2293,14 +2318,15 @@ fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Re
 
             let mut activated = false;
             for _ in 0..20 {
-                if evaluate_js(&tab, &activated_js(index))?
+                if evaluate_js(&tab, &activated_js(index))
+                    .await?
                     .as_bool()
                     .unwrap_or(false)
                 {
                     activated = true;
                     break;
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
             if !activated {
                 skipped.push(json!({
@@ -2310,9 +2336,9 @@ fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Re
                 }));
                 continue;
             }
-            std::thread::sleep(Duration::from_millis(250));
+            tokio::time::sleep(Duration::from_millis(250)).await;
 
-            let state_data = evaluate(&tab)?;
+            let state_data = evaluate(&tab).await?;
             let state_findings = check(&state_data);
             let generic_delta: Vec<Value> = state_findings
                 .into_iter()
@@ -2320,7 +2346,7 @@ fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Re
                 .collect();
             let mut state_rules: Vec<Value> = Vec::new();
             if let Some(rules) = ruleset {
-                let oracle = load_oracle(&tab, rules)?;
+                let oracle = load_oracle(&tab, rules).await?;
                 state_rules = rule_findings(rules, &oracle, &state_data, design, &sheet_text);
             }
             let state_name = slug(&name, index);
@@ -2369,7 +2395,7 @@ fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Re
     }
 
     let focus_states = if args.sample_states {
-        let sampled = evaluate_js(&tab, FOCUS_JS)?;
+        let sampled = evaluate_js(&tab, FOCUS_JS).await?;
         extra.extend(focus_state_findings(&sampled));
         sampled.as_array().cloned().unwrap_or_default()
     } else {
@@ -2424,8 +2450,8 @@ fn scrape_once(browser: &Browser, args: &Args, context: ScrapeContext<'_>) -> Re
     })
 }
 
-fn validate_selectors(tab: &Tab, rules: &RuleSet) -> Result<()> {
-    let errors = evaluate_js(tab, &validate_js(&rules.selectors))?;
+async fn validate_selectors(tab: &Page, rules: &RuleSet) -> Result<()> {
+    let errors = evaluate_js(tab, &validate_js(&rules.selectors)).await?;
     if let Some(list) = errors.as_array() {
         if let Some(error) = list.first() {
             anyhow::bail!(
@@ -2449,8 +2475,8 @@ struct Oracle {
     selectors: std::collections::HashMap<String, SelectorOracle>,
 }
 
-fn load_oracle(tab: &Tab, rules: &RuleSet) -> Result<Oracle> {
-    let data = evaluate_js(tab, &oracle_js(&rules.selectors, &rules.properties))?;
+async fn load_oracle(tab: &Page, rules: &RuleSet) -> Result<Oracle> {
+    let data = evaluate_js(tab, &oracle_js(&rules.selectors, &rules.properties)).await?;
     let mut oracle = Oracle::default();
     for selector in &rules.selectors {
         let Some(entry) = data["selectors"].get(selector) else {
@@ -2538,6 +2564,56 @@ fn layer_for(check: &str) -> &'static str {
     }
 }
 
+fn severity_rank(finding: &Value) -> u8 {
+    match finding["severity"].as_str().unwrap_or("P3") {
+        "P0" => 0,
+        "P1" => 1,
+        "P2" => 2,
+        _ => 3,
+    }
+}
+
+fn sort_findings(findings: &mut [Value]) {
+    findings.sort_by(|left, right| {
+        severity_rank(left)
+            .cmp(&severity_rank(right))
+            .then_with(|| {
+                left["check"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(right["check"].as_str().unwrap_or(""))
+            })
+            .then_with(|| {
+                left["state"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(right["state"].as_str().unwrap_or(""))
+            })
+            .then_with(|| {
+                left["selector"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(right["selector"].as_str().unwrap_or(""))
+            })
+            .then_with(|| {
+                left["message"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(right["message"].as_str().unwrap_or(""))
+            })
+            .then_with(|| left.to_string().cmp(&right.to_string()))
+    });
+}
+
+fn sort_value_entries(entries: &mut [Value]) {
+    entries.sort_by(|left, right| {
+        right["count"]
+            .as_u64()
+            .cmp(&left["count"].as_u64())
+            .then_with(|| left.to_string().cmp(&right.to_string()))
+    });
+}
+
 fn normalize_findings(findings: &mut [Value], generic: bool) {
     for finding in findings.iter_mut() {
         let check = finding["check"].as_str().unwrap_or("").to_string();
@@ -2556,6 +2632,7 @@ fn normalize_findings(findings: &mut [Value], generic: bool) {
         }
         finding["fingerprint"] = json!(finding_fingerprint(finding));
     }
+    sort_findings(findings);
 }
 
 struct ReportSources<'a> {
@@ -4576,25 +4653,25 @@ fn infer_design(baseline: &Value) -> (Value, Vec<Value>) {
             })
         })
         .collect();
-    palette_entries.sort_by(|left, right| right["count"].as_u64().cmp(&left["count"].as_u64()));
+    sort_value_entries(&mut palette_entries);
 
     let mut spacing_entries: Vec<Value> = spacing
         .iter()
         .map(|(value, count)| json!({ "value": value, "count": count, "confidence": confidence(*count, spacing_total) }))
         .collect();
-    spacing_entries.sort_by(|left, right| right["count"].as_u64().cmp(&left["count"].as_u64()));
+    sort_value_entries(&mut spacing_entries);
 
     let mut radius_entries: Vec<Value> = radii
         .iter()
         .map(|(value, count)| json!({ "value": value, "count": count, "confidence": confidence(*count, radii.values().sum::<u64>()) }))
         .collect();
-    radius_entries.sort_by(|left, right| right["count"].as_u64().cmp(&left["count"].as_u64()));
+    sort_value_entries(&mut radius_entries);
 
     let mut font_entries: Vec<Value> = fonts
         .iter()
         .map(|(family, count)| json!({ "family": family, "count": count, "confidence": confidence(*count, font_total) }))
         .collect();
-    font_entries.sort_by(|left, right| right["count"].as_u64().cmp(&left["count"].as_u64()));
+    sort_value_entries(&mut font_entries);
 
     let typography_total: u64 = typography.values().map(|(_, count)| *count).sum();
     let mut typography_entries: Vec<Value> = typography
@@ -4611,7 +4688,7 @@ fn infer_design(baseline: &Value) -> (Value, Vec<Value>) {
             entry
         })
         .collect();
-    typography_entries.sort_by(|left, right| right["count"].as_u64().cmp(&left["count"].as_u64()));
+    sort_value_entries(&mut typography_entries);
 
     (
         json!({
@@ -6185,8 +6262,33 @@ fn rule_findings(
     findings
 }
 
-fn settle(tab: &Tab, args: &Args) -> Result<()> {
+async fn settle(tab: &Page, args: &Args) -> Result<()> {
     let wait = r#"(async () => {
+  await new Promise((resolve) => {
+    let timer;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      observer.disconnect();
+      clearTimeout(limit);
+      clearTimeout(timer);
+      resolve();
+    };
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(finish, 250);
+    };
+    const observer = new MutationObserver(reset);
+    observer.observe(document.documentElement, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    const limit = setTimeout(finish, 2000);
+    reset();
+  });
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const images = Array.from(document.images || []).filter((image) => !image.complete);
   if (images.length > 0) {
@@ -6200,7 +6302,18 @@ fn settle(tab: &Tab, args: &Args) -> Result<()> {
   }
   return true;
 })()"#;
-    let _ = tab.evaluate(wait, true);
+    let _ = evaluate_js(tab, wait).await;
+    let stabilize = r#"(() => {
+  if (!document.getAnimations) return true;
+  for (const animation of document.getAnimations()) {
+    try {
+      animation.pause();
+      animation.currentTime = 0;
+    } catch (_) {}
+  }
+  return true;
+})()"#;
+    let _ = evaluate_js(tab, stabilize).await;
     if args.freeze_animations {
         let freeze = r#"(() => {
   const style = document.createElement("style");
@@ -6209,32 +6322,39 @@ fn settle(tab: &Tab, args: &Args) -> Result<()> {
   (document.head || document.documentElement).appendChild(style);
   return true;
 })()"#;
-        let _ = tab.evaluate(freeze, true);
+        let _ = evaluate_js(tab, freeze).await;
     }
     Ok(())
 }
 
-fn load(tab: &Tab, args: &Args) -> Result<()> {
+async fn load(tab: &Page, args: &Args) -> Result<()> {
     let url = args.url.as_deref().context("--url is required")?;
-    tab.navigate_to(url)
+    tab.goto(url, None)
+        .await
         .with_context(|| format!("navigate to {url}"))?;
-    tab.wait_until_navigated().context("wait for navigation")?;
+    tab.wait_for_load_state(None)
+        .await
+        .context("wait for navigation")?;
     if let Some(selector) = &args.wait_for {
-        tab.wait_for_element_with_custom_timeout(selector, args.timeout)
+        tab.locator(selector)
+            .wait_for(None)
+            .await
             .with_context(|| format!("wait for {selector}"))?;
     }
-    std::thread::sleep(Duration::from_millis(400));
-    settle(tab, args)?;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    settle(tab, args).await?;
     Ok(())
 }
 
-fn evaluate(tab: &Tab) -> Result<Value> {
-    evaluate_js(tab, JS)
+async fn evaluate(tab: &Page) -> Result<Value> {
+    evaluate_js(tab, JS).await
 }
 
-fn evaluate_js(tab: &Tab, js: &str) -> Result<Value> {
-    let remote = tab.evaluate(js, true).context("evaluate page")?;
-    let raw = remote.value.context("page returned no value")?;
+async fn evaluate_js(tab: &Page, js: &str) -> Result<Value> {
+    let raw: Value = tab
+        .evaluate(js, None::<&()>)
+        .await
+        .context("evaluate page")?;
     match raw {
         Value::String(text) => serde_json::from_str(&text).context("parse page payload"),
         other => Ok(other),
