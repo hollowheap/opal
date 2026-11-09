@@ -2132,6 +2132,8 @@ async fn scrape_once_async(
     let tab = browser.new_page().await.context("open tab")?;
     tab.set_default_timeout(args.timeout.as_millis() as f64)
         .await;
+    tab.set_default_navigation_timeout(args.timeout.as_millis() as f64)
+        .await;
     let diagnostics = Arc::new(Mutex::new(PageDiagnostics::default()));
     let log_events = Arc::clone(&diagnostics);
     tab.on_console(move |message| {

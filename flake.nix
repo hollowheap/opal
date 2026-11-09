@@ -16,6 +16,23 @@
       packages = forAllSystems (
         pkgs:
         let
+          # playwright-rs talks to Microsoft Playwright's Node driver. Pin the same
+          # driver version the crate expects so the Nix package works without a
+          # pre-populated user cache.
+          playwrightCore = pkgs.fetchurl {
+            url = "https://registry.npmjs.org/playwright-core/-/playwright-core-1.64.0.tgz";
+            hash = "sha256-kMi2sZ2gobHpoATNb/PknoJmighW4B78wOLZwrRGa7Y=";
+          };
+          playwrightDriver = pkgs.runCommand "playwright-core-1.64.0" {
+            nativeBuildInputs = [
+              pkgs.gnutar
+              pkgs.gzip
+            ];
+          } ''
+            mkdir -p $out
+            tar -xzf ${playwrightCore} -C $out
+          '';
+
           ui-probe = pkgs.rustPlatform.buildRustPackage {
             pname = "ui-probe";
             version = "0.1.0";
@@ -33,7 +50,10 @@
             ];
 
             postInstall = ''
-              wrapProgram $out/bin/ui-probe --set UI_PROBE_CHROME ${pkgs.chromium}/bin/chromium
+              wrapProgram $out/bin/ui-probe \
+                --set UI_PROBE_CHROME ${pkgs.chromium}/bin/chromium \
+                --set PLAYWRIGHT_NODE_EXE ${pkgs.nodejs}/bin/node \
+                --set PLAYWRIGHT_CLI_JS ${playwrightDriver}/package/cli.js
             '';
 
             meta = {

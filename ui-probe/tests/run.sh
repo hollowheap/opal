@@ -145,6 +145,14 @@ for check in   accent-border-rounded continuous-scroller clipped-escape-child co
   jqr "expanded-$check" "$tmp/expanded-checks.json" ".checks | index(\"$check\") != null"
 done
 
+run determinism-first 2 "$tmp/determinism-first.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$pack" --theme both --viewport sweep --pretty
+run determinism-second 2 "$tmp/determinism-second.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$pack" --theme both --viewport sweep --pretty
+if cmp -s "$tmp/determinism-first.json" "$tmp/determinism-second.json"; then
+  ok
+else
+  bad "capture is not deterministic across two runs"
+fi
+
 run disclosure 2 "$tmp/disclosure.json" --url "$(file_url disclosure.html)" --no-sandbox --expand --pretty
 jqr disclosure-expanded "$tmp/disclosure.json" '.states.expanded | length == 1'
 jqr disclosure-skip "$tmp/disclosure.json" '[.states.skipped[] | select(.reason == "postcondition-not-met")] | length == 1'
