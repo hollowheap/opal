@@ -2012,6 +2012,7 @@ struct Scrape {
     unverified: Vec<Value>,
     expanded: Vec<Value>,
     skipped: Vec<Value>,
+    disabled_checks: Vec<String>,
 }
 
 #[derive(Default)]
@@ -2274,11 +2275,14 @@ async fn scrape_once_async(
     });
     let sheet_text = sheets_text(&sheets);
 
-    let mut findings = with_state(check(&baseline), &args.state);
+    let mut findings = apply_ruleset(with_state(check(&baseline), &args.state), ruleset);
     if let Some(rules) = ruleset {
         let oracle = load_oracle(&tab, rules).await?;
         findings.extend(with_state(
-            rule_findings(rules, &oracle, &baseline, design, &sheet_text),
+            apply_ruleset(
+                rule_findings(rules, &oracle, &baseline, design, &sheet_text),
+                ruleset,
+            ),
             &args.state,
         ));
     }
@@ -2341,7 +2345,7 @@ async fn scrape_once_async(
             tokio::time::sleep(Duration::from_millis(250)).await;
 
             let state_data = evaluate(&tab).await?;
-            let state_findings = check(&state_data);
+            let state_findings = apply_ruleset(check(&state_data), ruleset);
             let generic_delta: Vec<Value> = state_findings
                 .into_iter()
                 .filter(|finding| !baseline_keys.contains(&finding_key(finding)))
@@ -2349,7 +2353,10 @@ async fn scrape_once_async(
             let mut state_rules: Vec<Value> = Vec::new();
             if let Some(rules) = ruleset {
                 let oracle = load_oracle(&tab, rules).await?;
-                state_rules = rule_findings(rules, &oracle, &state_data, design, &sheet_text);
+                state_rules = apply_ruleset(
+                    rule_findings(rules, &oracle, &state_data, design, &sheet_text),
+                    ruleset,
+                );
             }
             let state_name = slug(&name, index);
             let state_count = generic_delta.len()
@@ -2417,7 +2424,7 @@ async fn scrape_once_async(
         None
     };
 
-    findings.extend(with_state(extra, &args.state));
+    findings.extend(with_state(apply_ruleset(extra, ruleset), &args.state));
 
     let mut unverified_entries: Vec<Value> = Vec::new();
     for sheet in sheets["unreadable"].as_array().cloned().unwrap_or_default() {
@@ -2437,6 +2444,17 @@ async fn scrape_once_async(
     unverified_entries.extend(rule_notes.to_vec());
     unverified_entries.extend(design_unverified);
     unverified_entries.extend(colour_unverified(&baseline));
+    let unverified_entries = apply_unverified_rules(unverified_entries, ruleset);
+    let disabled_checks = ruleset
+        .map(|rules| {
+            rules
+                .checks
+                .iter()
+                .filter(|rule| !rule.enabled)
+                .map(|rule| rule.id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
 
     Ok(Scrape {
         baseline,
@@ -2449,6 +2467,7 @@ async fn scrape_once_async(
         unverified: unverified_entries,
         expanded,
         skipped,
+        disabled_checks,
     })
 }
 
@@ -2688,7 +2707,18 @@ fn build_report(
         .unwrap_or(0);
     let mut unverified_list = unverified(&first.baseline);
     unverified_list.extend(first.unverified.clone());
-    let unverified_list = dedupe_values(unverified_list);
+    let mut unverified_list = dedupe_values(unverified_list);
+    unverified_list.retain(|entry| {
+        entry["check"]
+            .as_str()
+            .map(|check| {
+                !first
+                    .disabled_checks
+                    .iter()
+                    .any(|disabled| disabled == check)
+            })
+            .unwrap_or(true)
+    });
 
     let mut themes: Vec<String> = Vec::new();
     for theme in runs.iter().filter_map(|run| run.theme.clone()) {
@@ -5067,6 +5097,7 @@ fn is_ui_file(path: &Path) -> bool {
 struct RuleSet {
     structural: Vec<StructuralRule>,
     named: Vec<NamedRule>,
+    checks: Vec<CheckRule>,
     selectors: Vec<String>,
     properties: Vec<String>,
 }
@@ -5100,6 +5131,14 @@ struct NamedRule {
     params: Value,
 }
 
+struct CheckRule {
+    id: String,
+    source: String,
+    enabled: bool,
+    severity: Option<String>,
+    layer: Option<String>,
+}
+
 const NAMED_RULES: &[&str] = &[
     "nested-cards",
     "kicker-above-heading",
@@ -5112,6 +5151,64 @@ const NAMED_RULES: &[&str] = &[
     "bounce-easing",
     "rebuttal-cadence",
     "dismissive-copy",
+];
+
+// Checks implemented by the engine rather than by a named-rule matcher. A
+// rules-pack entry cannot change their detection logic yet, but it can make
+// them explicit, disable them, and override their severity or layer.
+const FIXED_RULES: &[&str] = &[
+    "accent-border-rounded",
+    "clipped-escape-child",
+    "clipped-text",
+    "colored-halo-shadow",
+    "compressed-type-scale",
+    "continuous-scroller",
+    "contrast",
+    "cream-canvas",
+    "decorative-blinking-caret",
+    "excess-letter-spacing",
+    "focus-hidden",
+    "grid-line-background",
+    "heading-skip",
+    "heading-spacing-relation",
+    "hidden-text-share",
+    "image-source-missing",
+    "irregular-clip-path",
+    "justified-narrow-text",
+    "literal-uppercase-passage",
+    "missing-lang",
+    "missing-name",
+    "numeric-section-index",
+    "opening-column-overrun",
+    "overlapping-copy",
+    "oversized-headline",
+    "oversized-italic-serif",
+    "page-overflow",
+    "pill-eyebrow-label",
+    "positive-tabindex",
+    "primitive-svg-scene",
+    "pulsing-status-dot",
+    "radial-background-wash",
+    "radial-spotlight",
+    "reflex-font-choice",
+    "repeated-container-copy",
+    "repeating-stripe-surface",
+    "row-elevation-conflict",
+    "scroller-edge-flush",
+    "short-heading-tail",
+    "short-last-line",
+    "sibling-text-collision",
+    "sub-11px-control-text",
+    "sub-12px-body",
+    "synthetic-purple-palette",
+    "target-size",
+    "tight-container-inset",
+    "tight-line-height",
+    "unblurred-offset-shadow",
+    "uniform-spacing",
+    "viewport-edge-text",
+    "washed-grey-on-tint",
+    "washed-out-image",
 ];
 
 const CSS_PROPERTIES: &[&str] = &[
@@ -5563,6 +5660,7 @@ fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Ve
     }
 
     let mut named = Vec::new();
+    let mut checks = Vec::new();
     for rule in data["rules"].as_array().cloned().unwrap_or_default() {
         check_keys(
             &rule,
@@ -5574,6 +5672,34 @@ fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Ve
             .context("named rule needs an id")?
             .to_string();
         let rule_source = rule["_source"].as_str().unwrap_or("").to_string();
+        if FIXED_RULES.contains(&id.as_str()) {
+            let enabled = rule["enabled"].as_bool().unwrap_or(true);
+            let severity = rule["severity"].as_str().map(str::to_string);
+            let layer = rule["layer"].as_str().map(str::to_string);
+            if let Some(severity) = severity.as_deref() {
+                if !["error", "advisory", "P0", "P1", "P2", "P3"].contains(&severity) {
+                    anyhow::bail!("rules: unknown severity {severity} for check {id}");
+                }
+            }
+            if let Some(layer) = layer.as_deref() {
+                validate_severity_layer("advisory", layer)?;
+            }
+            if rule["params"]
+                .as_object()
+                .map(|params| !params.is_empty())
+                .unwrap_or(false)
+            {
+                anyhow::bail!("rules: check {id} does not take params yet");
+            }
+            checks.push(CheckRule {
+                id,
+                source: rule_source,
+                enabled,
+                severity,
+                layer,
+            });
+            continue;
+        }
         if !NAMED_RULES.contains(&id.as_str()) {
             anyhow::bail!("rules: unknown rule id {id}");
         }
@@ -5600,6 +5726,7 @@ fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Ve
         RuleSet {
             structural,
             named,
+            checks,
             selectors,
             properties,
         },
@@ -5608,8 +5735,8 @@ fn parse_rules(data: &Value, design: Option<&DesignSpec>) -> Result<(RuleSet, Ve
 }
 
 fn validate_severity_layer(severity: &str, layer: &str) -> Result<()> {
-    if !["error", "advisory"].contains(&severity) {
-        anyhow::bail!("rules: severity must be error or advisory");
+    if !["error", "advisory", "P0", "P1", "P2", "P3"].contains(&severity) {
+        anyhow::bail!("rules: severity must be error, advisory, or P0-P3");
     }
     if !["layout", "sheet", "content", "source"].contains(&layer) {
         anyhow::bail!("rules: unknown layer {layer}");
@@ -6469,6 +6596,57 @@ fn unverified(data: &Value) -> Vec<Value> {
         }
     }
     out
+}
+
+fn apply_check_rules(findings: Vec<Value>, rules: &[CheckRule]) -> Vec<Value> {
+    if rules.is_empty() {
+        return findings;
+    }
+    findings
+        .into_iter()
+        .filter_map(|mut finding| {
+            let check = finding["check"].as_str().unwrap_or("").to_string();
+            let Some(rule) = rules.iter().find(|rule| rule.id == check) else {
+                return Some(finding);
+            };
+            if !rule.enabled {
+                return None;
+            }
+            if let Some(severity) = &rule.severity {
+                finding["severity"] = json!(severity);
+            }
+            if let Some(layer) = &rule.layer {
+                finding["layer"] = json!(layer);
+            }
+            if !rule.source.is_empty() {
+                finding["ruleSource"] = json!(rule.source);
+            }
+            Some(finding)
+        })
+        .collect()
+}
+
+fn apply_ruleset(findings: Vec<Value>, ruleset: Option<&RuleSet>) -> Vec<Value> {
+    match ruleset {
+        Some(rules) => apply_check_rules(findings, &rules.checks),
+        None => findings,
+    }
+}
+
+fn apply_unverified_rules(entries: Vec<Value>, ruleset: Option<&RuleSet>) -> Vec<Value> {
+    let Some(rules) = ruleset else {
+        return entries;
+    };
+    entries
+        .into_iter()
+        .filter(|entry| {
+            let check = entry["check"].as_str().unwrap_or("");
+            !rules
+                .checks
+                .iter()
+                .any(|rule| rule.id == check && !rule.enabled)
+        })
+        .collect()
 }
 
 fn check(data: &Value) -> Vec<Value> {

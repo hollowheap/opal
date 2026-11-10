@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "pack": "test-disable-contrast",
+  "rules": [
+    {
+      "id": "contrast",
+      "enabled": false
+    }
+  ]
+}

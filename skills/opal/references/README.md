@@ -2,6 +2,12 @@
 
 `default-rules.json` is the generic advisory floor. Project packs overlay named rules by id and append structural rules. A pack that tightens a default keeps the same id so the overlay is explicit. A same-id entry is a deliberate tightening, not drift; the stricter pack must not loosen the default.
 
+## Named rules and fixed checks
+
+The default pack has two kinds of entries. The named rules are the ten advisory checks above. The fixed checks are the engine checks that used to be hardcoded: 52 entries covering layout, type, colour, imagery, motion, and the baseline accessibility checks. Their entries are explicit so a project can see the whole floor, disable a check, or override its severity and layer. The fixed entries carry no parameters yet; their detection logic stays in the engine.
+
+A fixed-check entry leaves the engine's native `P0`–`P3` severity and layer alone unless it sets `severity` or `layer`. Disabling one removes its findings from the report and from `summary.byCheck`.
+
 ## Default and tightened pairs
 
 These defaults are intentionally loose. A surface pack may tighten them; it must not loosen the default.

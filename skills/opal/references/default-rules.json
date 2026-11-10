@@ -134,6 +134,214 @@
           "\\btheatre\\b"
         ]
       }
+    },
+    {
+      "id": "accent-border-rounded",
+      "enabled": true
+    },
+    {
+      "id": "clipped-escape-child",
+      "enabled": true
+    },
+    {
+      "id": "clipped-text",
+      "enabled": true
+    },
+    {
+      "id": "colored-halo-shadow",
+      "enabled": true
+    },
+    {
+      "id": "compressed-type-scale",
+      "enabled": true
+    },
+    {
+      "id": "continuous-scroller",
+      "enabled": true
+    },
+    {
+      "id": "contrast",
+      "enabled": true
+    },
+    {
+      "id": "cream-canvas",
+      "enabled": true
+    },
+    {
+      "id": "decorative-blinking-caret",
+      "enabled": true
+    },
+    {
+      "id": "excess-letter-spacing",
+      "enabled": true
+    },
+    {
+      "id": "focus-hidden",
+      "enabled": true
+    },
+    {
+      "id": "grid-line-background",
+      "enabled": true
+    },
+    {
+      "id": "heading-skip",
+      "enabled": true
+    },
+    {
+      "id": "heading-spacing-relation",
+      "enabled": true
+    },
+    {
+      "id": "hidden-text-share",
+      "enabled": true
+    },
+    {
+      "id": "image-source-missing",
+      "enabled": true
+    },
+    {
+      "id": "irregular-clip-path",
+      "enabled": true
+    },
+    {
+      "id": "justified-narrow-text",
+      "enabled": true
+    },
+    {
+      "id": "literal-uppercase-passage",
+      "enabled": true
+    },
+    {
+      "id": "missing-lang",
+      "enabled": true
+    },
+    {
+      "id": "missing-name",
+      "enabled": true
+    },
+    {
+      "id": "numeric-section-index",
+      "enabled": true
+    },
+    {
+      "id": "opening-column-overrun",
+      "enabled": true
+    },
+    {
+      "id": "overlapping-copy",
+      "enabled": true
+    },
+    {
+      "id": "oversized-headline",
+      "enabled": true
+    },
+    {
+      "id": "oversized-italic-serif",
+      "enabled": true
+    },
+    {
+      "id": "page-overflow",
+      "enabled": true
+    },
+    {
+      "id": "pill-eyebrow-label",
+      "enabled": true
+    },
+    {
+      "id": "positive-tabindex",
+      "enabled": true
+    },
+    {
+      "id": "primitive-svg-scene",
+      "enabled": true
+    },
+    {
+      "id": "pulsing-status-dot",
+      "enabled": true
+    },
+    {
+      "id": "radial-background-wash",
+      "enabled": true
+    },
+    {
+      "id": "radial-spotlight",
+      "enabled": true
+    },
+    {
+      "id": "reflex-font-choice",
+      "enabled": true
+    },
+    {
+      "id": "repeated-container-copy",
+      "enabled": true
+    },
+    {
+      "id": "repeating-stripe-surface",
+      "enabled": true
+    },
+    {
+      "id": "row-elevation-conflict",
+      "enabled": true
+    },
+    {
+      "id": "scroller-edge-flush",
+      "enabled": true
+    },
+    {
+      "id": "short-heading-tail",
+      "enabled": true
+    },
+    {
+      "id": "short-last-line",
+      "enabled": true
+    },
+    {
+      "id": "sibling-text-collision",
+      "enabled": true
+    },
+    {
+      "id": "sub-11px-control-text",
+      "enabled": true
+    },
+    {
+      "id": "sub-12px-body",
+      "enabled": true
+    },
+    {
+      "id": "synthetic-purple-palette",
+      "enabled": true
+    },
+    {
+      "id": "target-size",
+      "enabled": true
+    },
+    {
+      "id": "tight-container-inset",
+      "enabled": true
+    },
+    {
+      "id": "tight-line-height",
+      "enabled": true
+    },
+    {
+      "id": "unblurred-offset-shadow",
+      "enabled": true
+    },
+    {
+      "id": "uniform-spacing",
+      "enabled": true
+    },
+    {
+      "id": "viewport-edge-text",
+      "enabled": true
+    },
+    {
+      "id": "washed-grey-on-tint",
+      "enabled": true
+    },
+    {
+      "id": "washed-out-image",
+      "enabled": true
     }
   ]
 }

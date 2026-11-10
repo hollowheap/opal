@@ -34,11 +34,11 @@ The probe captures console errors and warnings, uncaught page errors, and failed
 
 Rules resolve from `--rules`, the nearest `.opal/rules.json` found from the working directory to the git root, then `~/.opal/rules.json`. Every existing file is loaded. Named rules overlay by id: the first source that names an id wins. Structural rules append from every source. The report lists the loaded files under `sources.rules` and tags each rule finding with `ruleSource`.
 
-Structural rules use CSS property names, `ancestors`/`descendants` constraints, and selector or design-parameter comparisons. Named rules use the registry ids below. Invalid keys, rule ids, properties, selectors, and malformed `param:` references exit `1`.
+Structural rules use CSS property names, `ancestors`/`descendants` constraints, and selector or design-parameter comparisons. Named rules use the registry ids below. Fixed-check entries use the same overlay by id, but their detection logic stays in the engine: an entry can disable the check or override its `severity` and `layer`, and it preserves the native `P0`–`P3` severity when those fields are omitted. Invalid keys, rule ids, properties, selectors, and malformed `param:` references exit `1`.
 
 A pack can list `extends` as a path or array of paths. Relative paths resolve from the referring pack. Extended packs load after the pack that names them. Cycles and missing files exit `1`. Packs may carry `$schema: "./rules.schema.json"` for editor validation; the schema lives beside the default pack.
 
-Registry ids: `nested-cards`, `kicker-above-heading`, `line-length`, `extreme-negative-tracking`, `gpt-thin-border-wide-shadow`, `side-tab`, `em-dash-overuse`, `marketing-buzzword`, `bounce-easing`. The shipped default pack omits `gpt-thin-border-wide-shadow` intentionally; an explicit project pack may still select the engine id.
+Registry ids: `nested-cards`, `kicker-above-heading`, `line-length`, `extreme-negative-tracking`, `gpt-thin-border-wide-shadow`, `side-tab`, `em-dash-overuse`, `marketing-buzzword`, `bounce-easing`, `rebuttal-cadence`, `dismissive-copy`. The shipped default pack omits `gpt-thin-border-wide-shadow` intentionally; an explicit project pack may still select the engine id. The default pack also names the 52 fixed checks, from `accent-border-rounded` through `washed-out-image`, so the full floor is visible and overridable.
 
 Every state is evaluated against the pack. A finding carries `state`, `layer`, and, when merged across runs, `states`, `themes`, and `viewports`.
 

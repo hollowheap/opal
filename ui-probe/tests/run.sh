@@ -110,6 +110,8 @@ design_url=$(file_url design-drift.html)
 dtcg="$here/design-dtcg.json"
 pack="$root/skills/opal/references/default-rules.json"
 jqr default-pack-scrub "$pack" '[.rules[].id] | index("gpt-thin-border-wide-shadow") | not'
+jqr default-pack-count "$pack" '.rules | length == 62'
+jqr default-pack-fixed "$pack" '[.rules[].id] | (index("contrast") != null) and (index("heading-spacing-relation") != null)'
 
 run clean 0 "$tmp/clean.json" --url "$clean_url" --no-sandbox --pretty
 jqr clean-empty "$tmp/clean.json" '.findings == []'
@@ -120,6 +122,15 @@ for check in page-overflow missing-lang heading-skip missing-name target-size po
   jqr "generic-$check" "$tmp/generic.json" "[.findings[].check] | index(\"$check\") != null"
 done
 jqr generic-visible "$tmp/generic.json" '.summary.captured >= .summary.elements'
+
+run generic-contrast-off 2 "$tmp/generic-contrast-off.json" --url "$generic_url" --no-sandbox --rules "$here/rules-disable-contrast.json" --pretty
+jqr generic-contrast-off "$tmp/generic-contrast-off.json" '[.findings[].check] | index("contrast") == null'
+jqr generic-contrast-off-summary "$tmp/generic-contrast-off.json" '.summary.byCheck.contrast == null'
+
+run generic-contrast-error 2 "$tmp/generic-contrast-error.json" --url "$generic_url" --no-sandbox --rules "$here/rules-override-contrast.json" --pretty
+jqr generic-contrast-error "$tmp/generic-contrast-error.json" '[.findings[] | select(.check == "contrast")] | length > 0 and all(.severity == "error" and .layer == "source")'
+
+run clean-contrast-off 0 "$tmp/clean-contrast-off.json" --url "$clean_url" --no-sandbox --rules "$here/rules-disable-contrast.json" --pretty
 
 run diagnostics 2 "$tmp/diagnostics.json" --url "$(file_url diagnostics.html)" --no-sandbox --pretty
 for check in console-error page-error network-error; do
@@ -144,6 +155,10 @@ jq -s '{checks: ([.[].findings[].check] | unique)}'   "$tmp/expanded.json" "$tmp
 for check in   accent-border-rounded continuous-scroller clipped-escape-child colored-halo-shadow   tight-container-inset cream-canvas decorative-blinking-caret dismissive-copy   opening-column-overrun compressed-type-scale washed-grey-on-tint grid-line-background   unblurred-offset-shadow heading-spacing-relation hidden-text-share image-source-missing   irregular-clip-path justified-narrow-text literal-uppercase-passage numeric-section-index   oversized-headline oversized-italic-serif pill-eyebrow-label pulsing-status-dot   radial-background-wash radial-spotlight rebuttal-cadence reflex-font-choice   repeated-container-copy repeating-stripe-surface row-elevation-conflict scroller-edge-flush   primitive-svg-scene short-heading-tail short-last-line sibling-text-collision   sub-12px-body synthetic-purple-palette overlapping-copy tight-line-height   sub-11px-control-text uniform-spacing viewport-edge-text washed-out-image excess-letter-spacing; do
   jqr "expanded-$check" "$tmp/expanded-checks.json" ".checks | index(\"$check\") != null"
 done
+
+run expanded-contrast-off 2 "$tmp/expanded-contrast-off.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$here/rules-disable-contrast.json" --pretty
+jqr expanded-contrast-off "$tmp/expanded-contrast-off.json" '[.findings[].check] | index("contrast") == null'
+jqr expanded-contrast-off-unverified "$tmp/expanded-contrast-off.json" '[.unverified[] | select(.check == "contrast")] | length == 0'
 
 run determinism-first 2 "$tmp/determinism-first.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$pack" --theme both --viewport sweep --pretty
 run determinism-second 2 "$tmp/determinism-second.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$pack" --theme both --viewport sweep --pretty

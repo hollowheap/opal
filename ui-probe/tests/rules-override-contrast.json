@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "pack": "test-override-contrast",
+  "rules": [
+    {
+      "id": "contrast",
+      "enabled": true,
+      "severity": "error",
+      "layer": "source"
+    }
+  ]
+}
