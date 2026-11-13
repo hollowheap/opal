@@ -53,7 +53,8 @@
               wrapProgram $out/bin/ui-probe \
                 --set UI_PROBE_CHROME ${pkgs.chromium}/bin/chromium \
                 --set PLAYWRIGHT_NODE_EXE ${pkgs.nodejs}/bin/node \
-                --set PLAYWRIGHT_CLI_JS ${playwrightDriver}/package/cli.js
+                --set PLAYWRIGHT_CLI_JS ${playwrightDriver}/package/cli.js \
+                --set UI_PROBE_DEFAULT_RULES ${./skills/opal/references/default-rules.json}
             '';
 
             meta = {

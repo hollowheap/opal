@@ -7,24 +7,121 @@
   "additionalProperties": false,
   "properties": {
     "$schema": { "type": "string" },
-    "version": { "const": 1 },
+    "version": { "const": 2 },
     "pack": { "type": "string" },
+    "description": { "type": "string" },
     "extends": {
       "oneOf": [
         { "type": "string" },
         { "type": "array", "items": { "type": "string" } }
       ]
     },
+    "aliases": { "$ref": "#/$defs/aliases" },
+    "alias": { "$ref": "#/$defs/aliases" },
+    "kinds": { "$ref": "#/$defs/aliases" },
+    "kindAliases": { "$ref": "#/$defs/aliases" },
+    "classAliases": { "$ref": "#/$defs/aliases" },
+    "ruleAliases": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "minItems": 1, "items": { "type": "string" } }
+            ]
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "array", "minItems": 2, "items": { "type": "string" } },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "tokenSets": { "type": "object" },
+    "catalogue": { "type": ["object", "array"] },
+    "catalogs": { "type": ["object", "array"] },
     "structural": {
       "type": "array",
-      "items": { "$ref": "#/$defs/structural" }
+      "items": { "$ref": "#/$defs/rule" }
     },
     "rules": {
       "type": "array",
-      "items": { "$ref": "#/$defs/named" }
+      "items": { "$ref": "#/$defs/rule" }
     }
   },
   "$defs": {
+    "aliases": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "class": { "type": "string" },
+                  "classes": { "type": "array", "items": { "type": "string" } },
+                  "aliases": { "type": "array", "items": { "type": "string" } },
+                  "names": { "type": "array", "items": { "type": "string" } },
+                  "members": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "array", "minItems": 2, "items": { "type": "string" } },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "type": "string" },
+                  "name": { "type": "string" },
+                  "class": { "type": "string" },
+                  "classes": { "type": "array", "items": { "type": "string" } },
+                  "aliases": { "type": "array", "items": { "type": "string" } },
+                  "names": { "type": "array", "items": { "type": "string" } },
+                  "members": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "operator": {
+      "enum": [
+        "all",
+        "and",
+        "every",
+        "any",
+        "or",
+        "some",
+        "one",
+        "only-one",
+        "only_one",
+        "onlyOne",
+        "exactly-one",
+        "exactly_one",
+        "exactlyOne",
+        "exactly one"
+      ]
+    },
     "constraint": {
       "type": "object",
       "additionalProperties": false,
@@ -35,116 +132,405 @@
         "none": { "type": "string", "minLength": 1 }
       }
     },
-    "property": {
+    "operand": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "array", "items": { "type": ["string", "number", "boolean"] } }
+      ]
+    },
+    "verb": {
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
-      "maxProperties": 1,
       "properties": {
+        "in": { "$ref": "#/$defs/operand" },
+        "notIn": { "$ref": "#/$defs/operand" },
+        "equals": { "$ref": "#/$defs/operand" },
+        "notEquals": { "$ref": "#/$defs/operand" },
+        "present": { "type": "boolean" },
+        "absent": { "type": "boolean" },
+        "allowFrom": { "type": "string" },
+        "oneOf": { "$ref": "#/$defs/operand" },
+        "noneOf": { "$ref": "#/$defs/operand" },
+        "member": { "$ref": "#/$defs/operand" },
+        "members": { "$ref": "#/$defs/operand" },
+        "allowed": { "$ref": "#/$defs/operand" },
+        "allow": { "$ref": "#/$defs/operand" },
+        "allowList": { "$ref": "#/$defs/operand" },
+        "values": { "$ref": "#/$defs/operand" },
+        "list": { "$ref": "#/$defs/operand" },
         "deny": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "type": ["string", "number"] }
-        },
-        "allowFrom": {
-          "enum": ["colors", "fonts", "spacing", "radii", "typography"]
-        }
-      }
-    },
-    "structural": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "selector"],
-      "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "selector": { "type": "string", "minLength": 1 },
-        "ancestors": { "$ref": "#/$defs/constraint" },
-        "descendants": { "$ref": "#/$defs/constraint" },
-        "properties": {
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/property" }
-        },
-        "severity": { "enum": ["error", "advisory"] },
-        "layer": { "enum": ["layout", "sheet", "content", "source"] }
-      }
-    },
-    "named": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id"],
-      "properties": {
-        "id": {
-          "enum": [
-            "nested-cards",
-            "kicker-above-heading",
-            "line-length",
-            "extreme-negative-tracking",
-            "gpt-thin-border-wide-shadow",
-            "side-tab",
-            "em-dash-overuse",
-            "marketing-buzzword",
-            "bounce-easing",
-            "rebuttal-cadence",
-            "dismissive-copy",
-            "accent-border-rounded",
-            "clipped-escape-child",
-            "clipped-text",
-            "colored-halo-shadow",
-            "compressed-type-scale",
-            "continuous-scroller",
-            "contrast",
-            "cream-canvas",
-            "decorative-blinking-caret",
-            "excess-letter-spacing",
-            "focus-hidden",
-            "grid-line-background",
-            "heading-skip",
-            "heading-spacing-relation",
-            "hidden-text-share",
-            "image-source-missing",
-            "irregular-clip-path",
-            "justified-narrow-text",
-            "literal-uppercase-passage",
-            "missing-lang",
-            "missing-name",
-            "numeric-section-index",
-            "opening-column-overrun",
-            "overlapping-copy",
-            "oversized-headline",
-            "oversized-italic-serif",
-            "page-overflow",
-            "pill-eyebrow-label",
-            "positive-tabindex",
-            "primitive-svg-scene",
-            "pulsing-status-dot",
-            "radial-background-wash",
-            "radial-spotlight",
-            "reflex-font-choice",
-            "repeated-container-copy",
-            "repeating-stripe-surface",
-            "row-elevation-conflict",
-            "scroller-edge-flush",
-            "short-heading-tail",
-            "short-last-line",
-            "sibling-text-collision",
-            "sub-11px-control-text",
-            "sub-12px-body",
-            "synthetic-purple-palette",
-            "target-size",
-            "tight-container-inset",
-            "tight-line-height",
-            "unblurred-offset-shadow",
-            "uniform-spacing",
-            "viewport-edge-text",
-            "washed-grey-on-tint",
-            "washed-out-image"
+          "oneOf": [
+            { "$ref": "#/$defs/operand" },
+            { "type": "array", "items": { "$ref": "#/$defs/operand" } }
           ]
         },
+        "verb": { "type": "string" },
+        "operand": { "$ref": "#/$defs/operand" },
+        "value": { "$ref": "#/$defs/operand" },
+        "tests": {
+          "oneOf": [
+            { "$ref": "#/$defs/verb" },
+            { "type": "array", "items": { "$ref": "#/$defs/verb" } }
+          ]
+        },
+        "all": {
+          "oneOf": [
+            { "$ref": "#/$defs/verb" },
+            { "type": "array", "items": { "$ref": "#/$defs/verb" } }
+          ]
+        },
+        "any": {
+          "oneOf": [
+            { "$ref": "#/$defs/verb" },
+            { "type": "array", "items": { "$ref": "#/$defs/verb" } }
+          ]
+        },
+        "one": {
+          "oneOf": [
+            { "$ref": "#/$defs/verb" },
+            { "type": "array", "items": { "$ref": "#/$defs/verb" } }
+          ]
+        },
+        "operator": { "$ref": "#/$defs/operator" }
+      }
+    },
+    "componentTests": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/$defs/verb" },
+          { "type": "array", "items": { "$ref": "#/$defs/verb" } }
+        ]
+      }
+    },
+    "propertyTest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "maxProperties": 1,
+          "required": ["deny"],
+          "properties": {
+            "deny": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": ["string", "number"] }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "maxProperties": 1,
+          "required": ["allowFrom"],
+          "properties": {
+            "allowFrom": { "type": "string", "minLength": 1 }
+          }
+        },
+        { "$ref": "#/$defs/verb" },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/verb" }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "components": { "$ref": "#/$defs/componentTests" },
+            "component": { "$ref": "#/$defs/componentTests" },
+            "tests": {
+              "oneOf": [
+                { "$ref": "#/$defs/verb" },
+                { "type": "array", "items": { "$ref": "#/$defs/verb" } }
+              ]
+            },
+            "constraints": {
+              "oneOf": [
+                { "$ref": "#/$defs/verb" },
+                { "type": "array", "items": { "$ref": "#/$defs/verb" } }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ruleConstraint": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "$ref": "#/$defs/constraint" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["property"],
+          "properties": {
+            "property": { "type": "string", "minLength": 1 },
+            "operator": { "$ref": "#/$defs/operator" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["attribute"],
+          "properties": {
+            "attribute": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["selector"],
+          "properties": {
+            "selector": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "cardinality": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "min": { "type": "integer", "minimum": 0 },
+        "minimum": { "type": "integer", "minimum": 0 },
+        "minCount": { "type": "integer", "minimum": 0 },
+        "atLeast": { "type": "integer", "minimum": 0 },
+        "exactly": { "type": "integer", "minimum": 0 },
+        "count": { "type": "integer", "minimum": 0 },
+        "max": { "type": "integer", "minimum": 0 },
+        "maximum": { "type": "integer", "minimum": 0 },
+        "maxCount": { "type": "integer", "minimum": 0 },
+        "atMost": { "type": "integer", "minimum": 0 },
+        "region": { "type": "string", "minLength": 1 },
+        "within": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 }
+      }
+    },
+    "expression": {
+      "oneOf": [
+        { "type": ["string", "number", "boolean", "null"] },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/expression" }
+        },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/expression" }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 },
         "enabled": { "type": "boolean" },
+        "selector": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          ]
+        },
+        "selectors": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "match": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "selector": { "type": "string", "minLength": 1 },
+                "selectors": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string", "minLength": 1 }
+                },
+                "operator": { "$ref": "#/$defs/operator" }
+              }
+            }
+          ]
+        },
+        "operator": { "$ref": "#/$defs/operator" },
+        "matchOperator": { "$ref": "#/$defs/operator" },
+        "selectorsOperator": { "$ref": "#/$defs/operator" },
+        "ancestors": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "$ref": "#/$defs/constraint" },
+            {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "$ref": "#/$defs/constraint" },
+                  { "type": "object", "additionalProperties": true }
+                ]
+              }
+            }
+          ]
+        },
+        "descendants": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "$ref": "#/$defs/constraint" },
+            {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "$ref": "#/$defs/constraint" },
+                  { "type": "object", "additionalProperties": true }
+                ]
+              }
+            }
+          ]
+        },
+        "constraints": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ruleConstraint" }
+        },
+        "properties": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/$defs/propertyTest" }
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["property"]
+              }
+            }
+          ]
+        },
+        "tests": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/$defs/propertyTest" }
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["property"]
+              }
+            }
+          ]
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/propertyTest" }
+        },
+        "membership": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": true },
+            { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+          ]
+        },
+        "attributeValues": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": true },
+            { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+          ]
+        },
+        "exceptions": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "selector": { "type": "string", "minLength": 1 },
+                "selectors": {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          ]
+        },
+        "exception": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "except": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "exclude": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "excludes": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "cardinality": {
+          "oneOf": [
+            { "$ref": "#/$defs/cardinality" },
+            { "type": "integer", "minimum": 0 },
+            { "type": "string", "pattern": "^[0-9]+$" }
+          ]
+        },
+        "count": {
+          "oneOf": [
+            { "$ref": "#/$defs/cardinality" },
+            { "type": "integer", "minimum": 0 },
+            { "type": "string", "pattern": "^[0-9]+$" }
+          ]
+        },
+        "minCount": { "type": "integer", "minimum": 0 },
+        "maxCount": { "type": "integer", "minimum": 0 },
+        "minimum": { "type": "integer", "minimum": 0 },
+        "maximum": { "type": "integer", "minimum": 0 },
+        "when": { "$ref": "#/$defs/expression" },
+        "condition": { "$ref": "#/$defs/expression" },
+        "expr": { "$ref": "#/$defs/expression" },
+        "message": { "type": "string" },
+        "scope": {
+          "enum": ["element", "page", "document", "sheet"]
+        },
+        "target": {
+          "enum": ["element", "page", "document", "sheet"]
+        },
+        "lifecycle": { "type": "string", "minLength": 1 },
+        "at": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "string", "minLength": 1 },
         "severity": {
           "enum": ["error", "advisory", "P0", "P1", "P2", "P3"]
         },
-        "layer": { "enum": ["layout", "sheet", "content", "source"] },
+        "layer": {
+          "enum": ["layout", "sheet", "content", "source", "runtime"]
+        },
         "params": { "type": "object" }
       }
     }

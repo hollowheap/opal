@@ -1,16 +1,15 @@
 {
   "$schema": "./rules.schema.json",
-  "version": 1,
+  "version": 2,
   "pack": "opal-default",
   "structural": [
     {
       "name": "no-gradient-text",
       "selector": "*",
+      "operator": "all",
       "properties": {
         "background-clip": {
-          "deny": [
-            "text"
-          ]
+          "equals": "text"
         }
       },
       "severity": "advisory",
@@ -19,94 +18,454 @@
   ],
   "rules": [
     {
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "cardLike"
+              },
+              true
+            ]
+          },
+          {
+            "gt": [
+              {
+                "field": "cardDepth"
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "message": "card inside card",
       "id": "nested-cards",
-      "enabled": true,
+      "name": "nested-cards",
       "severity": "advisory",
       "layer": "layout"
     },
     {
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "nextIsHeading"
+              },
+              true
+            ]
+          },
+          {
+            "lte": [
+              {
+                "field": "textLength"
+              },
+              {
+                "param": "maxTextLength"
+              }
+            ]
+          },
+          {
+            "lt": [
+              {
+                "field": "fontSize"
+              },
+              {
+                "field": "nextSize"
+              }
+            ]
+          },
+          {
+            "any": [
+              {
+                "equals": [
+                  {
+                    "param": "requireUppercaseOrTracking"
+                  },
+                  false
+                ]
+              },
+              {
+                "equals": [
+                  {
+                    "field": "textTransform"
+                  },
+                  "uppercase"
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "field": "letterSpacing"
+                  },
+                  {
+                    "mul": [
+                      {
+                        "field": "fontSize"
+                      },
+                      0.04
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "kicker above heading",
       "id": "kicker-above-heading",
-      "enabled": true,
-      "severity": "advisory",
-      "layer": "layout",
+      "name": "kicker-above-heading",
       "params": {
         "maxTextLength": 40,
         "requireUppercaseOrTracking": true
-      }
-    },
-    {
-      "id": "line-length",
-      "enabled": true,
-      "severity": "advisory",
-      "layer": "layout",
-      "params": {
-        "maxCh": 75
-      }
-    },
-    {
-      "id": "extreme-negative-tracking",
-      "enabled": true,
-      "severity": "advisory",
-      "layer": "layout",
-      "params": {
-        "minEm": -0.04
-      }
-    },
-    {
-      "id": "side-tab",
-      "enabled": true,
+      },
       "severity": "advisory",
       "layer": "layout"
     },
     {
-      "id": "em-dash-overuse",
-      "enabled": true,
-      "severity": "advisory",
-      "layer": "content",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "hasText"
+              },
+              true
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "textLength"
+              },
+              120
+            ]
+          },
+          {
+            "gt": [
+              {
+                "field": "chWidth"
+              },
+              0
+            ]
+          },
+          {
+            "gt": [
+              {
+                "div": [
+                  {
+                    "sub": [
+                      {
+                        "field": "rect.w"
+                      },
+                      {
+                        "add": [
+                          {
+                            "field": "padding.1"
+                          },
+                          {
+                            "field": "padding.3"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "field": "chWidth"
+                  }
+                ]
+              },
+              {
+                "param": "maxCh"
+              }
+            ]
+          }
+        ]
+      },
+      "message": "line length above the pack limit",
+      "id": "line-length",
+      "name": "line-length",
       "params": {
-        "max": 8
-      }
+        "maxCh": 75
+      },
+      "severity": "advisory",
+      "layer": "layout"
     },
     {
-      "id": "marketing-buzzword",
-      "enabled": true,
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "field": "fontSize"
+              },
+              16
+            ]
+          },
+          {
+            "number": {
+              "field": "letterSpacing"
+            }
+          },
+          {
+            "lt": [
+              {
+                "div": [
+                  {
+                    "field": "letterSpacing"
+                  },
+                  {
+                    "field": "fontSize"
+                  }
+                ]
+              },
+              {
+                "param": "minEm"
+              }
+            ]
+          }
+        ]
+      },
+      "message": "tracking below the pack floor",
+      "id": "extreme-negative-tracking",
+      "name": "extreme-negative-tracking",
+      "params": {
+        "minEm": -0.04
+      },
+      "severity": "advisory",
+      "layer": "layout"
+    },
+    {
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "nthLargest": [
+                  {
+                    "field": "borderWidths"
+                  },
+                  0
+                ]
+              },
+              2
+            ]
+          },
+          {
+            "gte": [
+              {
+                "nthLargest": [
+                  {
+                    "field": "borderWidths"
+                  },
+                  0
+                ]
+              },
+              {
+                "mul": [
+                  {
+                    "nthLargest": [
+                      {
+                        "field": "borderWidths"
+                      },
+                      1
+                    ]
+                  },
+                  2
+                ]
+              }
+            ]
+          },
+          {
+            "gt": [
+              {
+                "max": {
+                  "field": "radiusPx"
+                }
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "message": "side tab accent",
+      "id": "side-tab",
+      "name": "side-tab",
+      "severity": "advisory",
+      "layer": "layout"
+    },
+    {
+      "name": "em-dash-overuse",
+      "scope": "page",
+      "when": {
+        "gte": [
+          {
+            "countMatches": [
+              {
+                "field": "page.pageText"
+              },
+              "\u2014"
+            ]
+          },
+          8
+        ]
+      },
+      "message": "em dash overuse",
       "severity": "advisory",
       "layer": "content",
-      "params": {
-        "words": [
-          "supercharge",
-          "streamline",
-          "empower",
-          "world-class",
-          "enterprise-grade",
-          "next-generation",
-          "cutting-edge",
-          "best-in-class",
-          "mission-critical",
-          "game-changing",
-          "revolutionary",
-          "transformative",
-          "ai-powered",
-          "seamless",
-          "leverage",
-          "elevate",
-          "unlock",
-          "synergy",
-          "disrupt",
-          "paradigm shift"
+      "id": "em-dash-overuse"
+    },
+    {
+      "name": "marketing-buzzword",
+      "scope": "page",
+      "when": {
+        "matches": [
+          {
+            "field": "page.pageText"
+          },
+          "(?i)supercharge|streamline|empower|world\\-class|enterprise\\-grade|next\\-generation|cutting\\-edge|best\\-in\\-class|mission\\-critical|game\\-changing|revolutionary|transformative|ai\\-powered|seamless|leverage|elevate|unlock|synergy|disrupt|paradigm\\ shift"
         ]
-      }
+      },
+      "message": "marketing buzzword",
+      "severity": "advisory",
+      "layer": "content",
+      "id": "marketing-buzzword"
     },
     {
       "id": "bounce-easing",
-      "enabled": true,
+      "name": "bounce-easing",
+      "scope": "page",
+      "when": {
+        "any": [
+          {
+            "gt": [
+              {
+                "countOf": [
+                  {
+                    "field": "page.elements"
+                  },
+                  {
+                    "any": [
+                      {
+                        "overshooting": {
+                          "field": "transitionTimingFunction"
+                        }
+                      },
+                      {
+                        "overshooting": {
+                          "field": "animationTimingFunction"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              0
+            ]
+          },
+          {
+            "overshooting": {
+              "field": "sheet.text"
+            }
+          }
+        ]
+      },
+      "message": "overshooting easing curve",
       "severity": "advisory",
       "layer": "sheet",
       "params": {}
     },
     {
       "id": "rebuttal-cadence",
-      "enabled": true,
+      "name": "rebuttal-cadence",
+      "scope": "page",
+      "when": {
+        "gte": [
+          {
+            "countOf": [
+              {
+                "blocks": {
+                  "field": "page.pageText"
+                }
+              },
+              {
+                "all": [
+                  {
+                    "gte": [
+                      {
+                        "length": {
+                          "field": "self"
+                        }
+                      },
+                      40
+                    ]
+                  },
+                  {
+                    "containsAny": [
+                      {
+                        "lower": {
+                          "field": "self"
+                        }
+                      },
+                      {
+                        "param": "patterns"
+                      }
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "words": {
+                          "lastSentence": {
+                            "field": "self"
+                          }
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "lte": [
+                      {
+                        "words": {
+                          "lastSentence": {
+                            "field": "self"
+                          }
+                        }
+                      },
+                      {
+                        "param": "maxWords"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "param": "minSections"
+          }
+        ]
+      },
+      "message": "sections land on a short rebuttal sentence",
       "severity": "advisory",
       "layer": "content",
       "params": {
@@ -124,224 +483,4520 @@
       }
     },
     {
-      "id": "dismissive-copy",
-      "enabled": true,
+      "name": "dismissive-copy",
+      "scope": "page",
+      "when": {
+        "matches": [
+          {
+            "field": "page.pageText"
+          },
+          "(?i)\\btheater\\b|\\btheatre\\b"
+        ]
+      },
+      "message": "copy dismisses a real concern as theater",
       "severity": "advisory",
       "layer": "content",
-      "params": {
-        "patterns": [
-          "\\btheater\\b",
-          "\\btheatre\\b"
-        ]
-      }
+      "id": "dismissive-copy"
     },
     {
       "id": "accent-border-rounded",
-      "enabled": true
+      "name": "accent-border-rounded",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gt": [
+              {
+                "max": {
+                  "field": "radiusPx"
+                }
+              },
+              0
+            ]
+          },
+          {
+            "gte": [
+              {
+                "max": {
+                  "field": "borderWidths"
+                }
+              },
+              3
+            ]
+          },
+          {
+            "chromatic": {
+              "field": "borderColors"
+            }
+          }
+        ]
+      },
+      "message": "a thick chromatic border follows a rounded corner",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
       "id": "clipped-escape-child",
-      "enabled": true
+      "name": "clipped-escape-child",
+      "scope": "page",
+      "when": {
+        "pairAny": [
+          {
+            "field": "page.elements"
+          },
+          {
+            "all": [
+              {
+                "equals": [
+                  {
+                    "field": "left.visible"
+                  },
+                  true
+                ]
+              },
+              {
+                "any": [
+                  {
+                    "matches": [
+                      {
+                        "field": "left.overflow"
+                      },
+                      "hidden|clip|auto|scroll"
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "left.overflowX"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "field": "left.rect.w"
+                  },
+                  0
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "field": "left.rect.h"
+                  },
+                  0
+                ]
+              },
+              {
+                "in": [
+                  {
+                    "field": "right.position"
+                  },
+                  [
+                    "absolute",
+                    "fixed"
+                  ]
+                ]
+              },
+              {
+                "ancestor": [
+                  {
+                    "field": "left.index"
+                  },
+                  {
+                    "field": "right.index"
+                  }
+                ]
+              },
+              {
+                "any": [
+                  {
+                    "lt": [
+                      {
+                        "field": "right.rect.x"
+                      },
+                      {
+                        "sub": [
+                          {
+                            "field": "left.rect.x"
+                          },
+                          8
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "lt": [
+                      {
+                        "field": "right.rect.y"
+                      },
+                      {
+                        "sub": [
+                          {
+                            "field": "left.rect.y"
+                          },
+                          8
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "add": [
+                          {
+                            "field": "right.rect.x"
+                          },
+                          {
+                            "field": "right.rect.w"
+                          }
+                        ]
+                      },
+                      {
+                        "add": [
+                          {
+                            "add": [
+                              {
+                                "field": "left.rect.x"
+                              },
+                              {
+                                "field": "left.rect.w"
+                              }
+                            ]
+                          },
+                          8
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "add": [
+                          {
+                            "field": "right.rect.y"
+                          },
+                          {
+                            "field": "right.rect.h"
+                          }
+                        ]
+                      },
+                      {
+                        "add": [
+                          {
+                            "add": [
+                              {
+                                "field": "left.rect.y"
+                              },
+                              {
+                                "field": "left.rect.h"
+                              }
+                            ]
+                          },
+                          8
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "a clipping container wraps a positioned child that escapes it",
+      "severity": "P2",
+      "layer": "layout"
     },
     {
-      "id": "clipped-text",
-      "enabled": true
+      "name": "clipped-text",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "hasText"
+              },
+              true
+            ]
+          },
+          {
+            "matches": [
+              {
+                "field": "overflow"
+              },
+              "hidden|clip"
+            ]
+          },
+          {
+            "any": [
+              {
+                "gt": [
+                  {
+                    "field": "overflowX"
+                  },
+                  1
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "field": "overflowY"
+                  },
+                  1
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "text is clipped by its container",
+      "severity": "P2",
+      "layer": "layout",
+      "id": "clipped-text"
     },
     {
       "id": "colored-halo-shadow",
-      "enabled": true
+      "name": "colored-halo-shadow",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "not": {
+              "shadowInset": {
+                "field": "focusStyle.boxShadow"
+              }
+            }
+          },
+          {
+            "shadowChromatic": {
+              "field": "focusStyle.boxShadow"
+            }
+          },
+          {
+            "gt": [
+              {
+                "shadowBlur": {
+                  "field": "focusStyle.boxShadow"
+                }
+              },
+              0
+            ]
+          },
+          {
+            "any": [
+              {
+                "lt": [
+                  {
+                    "shadowOffset": {
+                      "field": "focusStyle.boxShadow"
+                    }
+                  },
+                  2
+                ]
+              },
+              {
+                "dark": {
+                  "get": [
+                    {
+                      "firstOf": [
+                        {
+                          "field": "page.elements"
+                        },
+                        {
+                          "equals": [
+                            {
+                              "field": "tag"
+                            },
+                            "body"
+                          ]
+                        }
+                      ]
+                    },
+                    "backgroundColor"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "message": "a chromatic blurred shadow reads as a halo",
+      "severity": "P3",
+      "layer": "sheet"
     },
     {
       "id": "compressed-type-scale",
-      "enabled": true
+      "name": "compressed-type-scale",
+      "scope": "page",
+      "when": {
+        "groupAny": [
+          {
+            "filter": [
+              {
+                "field": "page.elements"
+              },
+              {
+                "all": [
+                  {
+                    "in": [
+                      {
+                        "field": "tag"
+                      },
+                      [
+                        "h1",
+                        "h2",
+                        "h3",
+                        "p"
+                      ]
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "fontSize"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "field": "parentIndex"
+          },
+          {
+            "all": [
+              {
+                "gte": [
+                  {
+                    "length": {
+                      "sortNumbers": {
+                        "unique": {
+                          "map": [
+                            {
+                              "field": "values"
+                            },
+                            {
+                              "field": "fontSize"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  2
+                ]
+              },
+              {
+                "adjacentAll": [
+                  {
+                    "sortNumbers": {
+                      "unique": {
+                        "map": [
+                          {
+                            "field": "values"
+                          },
+                          {
+                            "field": "fontSize"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "lt": [
+                      {
+                        "div": [
+                          {
+                            "field": "right"
+                          },
+                          {
+                            "field": "left"
+                          }
+                        ]
+                      },
+                      1.25
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "heading and body sizes never separate by 1.25x",
+      "severity": "P3",
+      "layer": "content"
     },
     {
-      "id": "continuous-scroller",
-      "enabled": true
+      "name": "continuous-scroller",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "any": [
+          {
+            "matches": [
+              {
+                "field": "animationName"
+              },
+              "(?i)ticker"
+            ]
+          },
+          {
+            "all": [
+              {
+                "notEquals": [
+                  {
+                    "field": "animationName"
+                  },
+                  "none"
+                ]
+              },
+              {
+                "notEquals": [
+                  {
+                    "field": "animationDuration"
+                  },
+                  "0s"
+                ]
+              },
+              {
+                "contains": [
+                  {
+                    "field": "animationIterationCount"
+                  },
+                  "infinite"
+                ]
+              },
+              {
+                "contains": [
+                  {
+                    "field": "overflow"
+                  },
+                  "hidden"
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "field": "overflowX"
+                  },
+                  0
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "content scrolls continuously and hides part of itself",
+      "severity": "P3",
+      "layer": "sheet",
+      "id": "continuous-scroller"
     },
     {
       "id": "contrast",
-      "enabled": true
+      "name": "contrast",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "hasText"
+              },
+              true
+            ]
+          },
+          {
+            "number": {
+              "contrast": true
+            }
+          },
+          {
+            "any": [
+              {
+                "all": [
+                  {
+                    "any": [
+                      {
+                        "gte": [
+                          {
+                            "field": "fontSize"
+                          },
+                          24
+                        ]
+                      },
+                      {
+                        "all": [
+                          {
+                            "gte": [
+                              {
+                                "field": "fontSize"
+                              },
+                              18.66
+                            ]
+                          },
+                          {
+                            "gte": [
+                              {
+                                "field": "fontWeight"
+                              },
+                              700
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "lt": [
+                      {
+                        "contrast": true
+                      },
+                      3
+                    ]
+                  }
+                ]
+              },
+              {
+                "all": [
+                  {
+                    "not": {
+                      "any": [
+                        {
+                          "gte": [
+                            {
+                              "field": "fontSize"
+                            },
+                            24
+                          ]
+                        },
+                        {
+                          "all": [
+                            {
+                              "gte": [
+                                {
+                                  "field": "fontSize"
+                                },
+                                18.66
+                              ]
+                            },
+                            {
+                              "gte": [
+                                {
+                                  "field": "fontWeight"
+                                },
+                                700
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "lt": [
+                      {
+                        "contrast": true
+                      },
+                      4.5
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "text contrast is below its threshold",
+      "severity": "P2",
+      "layer": "layout"
     },
     {
       "id": "cream-canvas",
-      "enabled": true
+      "name": "cream-canvas",
+      "selector": "body",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gt": [
+              {
+                "red": {
+                  "field": "backgroundColor"
+                }
+              },
+              200
+            ]
+          },
+          {
+            "gt": [
+              {
+                "green": {
+                  "field": "backgroundColor"
+                }
+              },
+              180
+            ]
+          },
+          {
+            "gt": [
+              {
+                "blue": {
+                  "field": "backgroundColor"
+                }
+              },
+              140
+            ]
+          },
+          {
+            "lt": [
+              {
+                "blue": {
+                  "field": "backgroundColor"
+                }
+              },
+              {
+                "sub": [
+                  {
+                    "red": {
+                      "field": "backgroundColor"
+                    }
+                  },
+                  8
+                ]
+              }
+            ]
+          },
+          {
+            "lt": [
+              {
+                "chroma": {
+                  "field": "backgroundColor"
+                }
+              },
+              80
+            ]
+          }
+        ]
+      },
+      "message": "the page uses a warm cream or beige canvas",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
-      "id": "decorative-blinking-caret",
-      "enabled": true
+      "name": "decorative-blinking-caret",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "any": [
+              {
+                "matches": [
+                  {
+                    "field": "animationName"
+                  },
+                  "(?i)blink|caret|cursor"
+                ]
+              },
+              {
+                "all": [
+                  {
+                    "lte": [
+                      {
+                        "field": "rect.w"
+                      },
+                      3
+                    ]
+                  },
+                  {
+                    "gte": [
+                      {
+                        "field": "rect.h"
+                      },
+                      12
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "lt": [
+              {
+                "field": "rect.y"
+              },
+              {
+                "mul": [
+                  {
+                    "field": "page.viewport.height"
+                  },
+                  0.6
+                ]
+              }
+            ]
+          },
+          {
+            "notEquals": [
+              {
+                "field": "contentEditable"
+              },
+              "true"
+            ]
+          },
+          {
+            "not": {
+              "in": [
+                {
+                  "field": "tag"
+                },
+                [
+                  "input",
+                  "textarea"
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "message": "a blinking caret is animated where no input exists",
+      "severity": "P3",
+      "layer": "sheet",
+      "id": "decorative-blinking-caret"
     },
     {
-      "id": "excess-letter-spacing",
-      "enabled": true
+      "name": "excess-letter-spacing",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "length": {
+                  "field": "text"
+                }
+              },
+              20
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "fontSize"
+              },
+              14
+            ]
+          },
+          {
+            "number": {
+              "field": "letterSpacing"
+            }
+          },
+          {
+            "gt": [
+              {
+                "div": [
+                  {
+                    "field": "letterSpacing"
+                  },
+                  {
+                    "field": "fontSize"
+                  }
+                ]
+              },
+              0.05
+            ]
+          }
+        ]
+      },
+      "message": "letter spacing is excessive on body text",
+      "severity": "P3",
+      "layer": "content",
+      "id": "excess-letter-spacing"
     },
     {
       "id": "focus-hidden",
-      "enabled": true
+      "name": "focus-hidden",
+      "scope": "page",
+      "when": {
+        "anyOf": [
+          {
+            "field": "page.focusables"
+          },
+          {
+            "notEquals": [
+              {
+                "field": "hiddenBy"
+              },
+              null
+            ]
+          }
+        ]
+      },
+      "message": "a focusable element is hidden",
+      "severity": "P2",
+      "layer": "layout"
     },
     {
-      "id": "grid-line-background",
-      "enabled": true
+      "name": "grid-line-background",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "countMatches": [
+                  {
+                    "field": "backgroundImage"
+                  },
+                  "linear-gradient"
+                ]
+              },
+              2
+            ]
+          },
+          {
+            "contains": [
+              {
+                "field": "backgroundImage"
+              },
+              "1px"
+            ]
+          },
+          {
+            "contains": [
+              {
+                "field": "backgroundSize"
+              },
+              "px"
+            ]
+          }
+        ]
+      },
+      "message": "a decorative grid is tiled from hairline gradients",
+      "severity": "P3",
+      "layer": "sheet",
+      "id": "grid-line-background"
     },
     {
       "id": "heading-skip",
-      "enabled": true
+      "name": "heading-skip",
+      "scope": "page",
+      "when": {
+        "adjacentAny": [
+          {
+            "field": "page.headings"
+          },
+          {
+            "all": [
+              {
+                "gt": [
+                  {
+                    "headingLevel": {
+                      "field": "left"
+                    }
+                  },
+                  0
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "headingLevel": {
+                      "field": "right"
+                    }
+                  },
+                  {
+                    "add": [
+                      {
+                        "headingLevel": {
+                          "field": "left"
+                        }
+                      },
+                      1
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "heading level jumps by more than one",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
-      "id": "heading-spacing-relation",
-      "enabled": true
+      "name": "heading-spacing-relation",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "in": [
+              {
+                "field": "tag"
+              },
+              [
+                "h1",
+                "h2",
+                "h3",
+                "h4"
+              ]
+            ]
+          },
+          {
+            "gt": [
+              {
+                "field": "margin.0"
+              },
+              0
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "margin.2"
+              },
+              {
+                "field": "margin.0"
+              }
+            ]
+          }
+        ]
+      },
+      "message": "space below a heading is not smaller than the space above",
+      "severity": "P3",
+      "layer": "layout",
+      "id": "heading-spacing-relation"
     },
     {
       "id": "hidden-text-share",
-      "enabled": true
+      "name": "hidden-text-share",
+      "scope": "page",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "countOf": [
+                  {
+                    "field": "page.elements"
+                  },
+                  {
+                    "all": [
+                      {
+                        "equals": [
+                          {
+                            "field": "hasText"
+                          },
+                          true
+                        ]
+                      },
+                      {
+                        "gte": [
+                          {
+                            "length": {
+                              "field": "text"
+                            }
+                          },
+                          20
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              4
+            ]
+          },
+          {
+            "gte": [
+              {
+                "countOf": [
+                  {
+                    "field": "page.elements"
+                  },
+                  {
+                    "all": [
+                      {
+                        "equals": [
+                          {
+                            "field": "hasText"
+                          },
+                          true
+                        ]
+                      },
+                      {
+                        "gte": [
+                          {
+                            "length": {
+                              "field": "text"
+                            }
+                          },
+                          20
+                        ]
+                      },
+                      {
+                        "any": [
+                          {
+                            "lte": [
+                              {
+                                "field": "opacity"
+                              },
+                              0.01
+                            ]
+                          },
+                          {
+                            "equals": [
+                              {
+                                "field": "visibility"
+                              },
+                              "hidden"
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "notEquals": [
+                          {
+                            "field": "display"
+                          },
+                          "none"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              3
+            ]
+          },
+          {
+            "gte": [
+              {
+                "div": [
+                  {
+                    "sumOf": [
+                      {
+                        "field": "page.elements"
+                      },
+                      {
+                        "if": [
+                          {
+                            "all": [
+                              {
+                                "equals": [
+                                  {
+                                    "field": "hasText"
+                                  },
+                                  true
+                                ]
+                              },
+                              {
+                                "gte": [
+                                  {
+                                    "length": {
+                                      "field": "text"
+                                    }
+                                  },
+                                  20
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "if": [
+                              {
+                                "all": [
+                                  {
+                                    "equals": [
+                                      {
+                                        "field": "hasText"
+                                      },
+                                      true
+                                    ]
+                                  },
+                                  {
+                                    "gte": [
+                                      {
+                                        "length": {
+                                          "field": "text"
+                                        }
+                                      },
+                                      20
+                                    ]
+                                  },
+                                  {
+                                    "any": [
+                                      {
+                                        "lte": [
+                                          {
+                                            "field": "opacity"
+                                          },
+                                          0.01
+                                        ]
+                                      },
+                                      {
+                                        "equals": [
+                                          {
+                                            "field": "visibility"
+                                          },
+                                          "hidden"
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "notEquals": [
+                                      {
+                                        "field": "display"
+                                      },
+                                      "none"
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "length": {
+                                  "field": "text"
+                                }
+                              },
+                              0
+                            ]
+                          },
+                          0
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "sumOf": [
+                      {
+                        "field": "page.elements"
+                      },
+                      {
+                        "if": [
+                          {
+                            "all": [
+                              {
+                                "equals": [
+                                  {
+                                    "field": "hasText"
+                                  },
+                                  true
+                                ]
+                              },
+                              {
+                                "gte": [
+                                  {
+                                    "length": {
+                                      "field": "text"
+                                    }
+                                  },
+                                  20
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "length": {
+                              "field": "text"
+                            }
+                          },
+                          0
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              0.4
+            ]
+          }
+        ]
+      },
+      "message": "a large share of text remains hidden after load",
+      "severity": "P2",
+      "layer": "content"
     },
     {
-      "id": "image-source-missing",
-      "enabled": true
+      "name": "image-source-missing",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "tag"
+              },
+              "img"
+            ]
+          },
+          {
+            "any": [
+              {
+                "equals": [
+                  {
+                    "field": "src"
+                  },
+                  ""
+                ]
+              },
+              {
+                "all": [
+                  {
+                    "equals": [
+                      {
+                        "field": "complete"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "naturalWidth"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+              {
+                "matches": [
+                  {
+                    "field": "src"
+                  },
+                  "(?i)placeholder|placehold|dummyimage|loremflickr|picsum|via\\.placeholder"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "image has no usable source",
+      "severity": "P2",
+      "layer": "content",
+      "id": "image-source-missing"
     },
     {
-      "id": "irregular-clip-path",
-      "enabled": true
+      "name": "irregular-clip-path",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "any": [
+          {
+            "matches": [
+              {
+                "field": "clipPath"
+              },
+              "^path\\("
+            ]
+          },
+          {
+            "all": [
+              {
+                "matches": [
+                  {
+                    "field": "clipPath"
+                  },
+                  "^polygon\\("
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "countMatches": [
+                      {
+                        "field": "clipPath"
+                      },
+                      ","
+                    ]
+                  },
+                  5
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "a complex clip path approximates a torn or blob edge",
+      "severity": "P3",
+      "layer": "sheet",
+      "id": "irregular-clip-path"
     },
     {
-      "id": "justified-narrow-text",
-      "enabled": true
+      "name": "justified-narrow-text",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "length": {
+                  "field": "text"
+                }
+              },
+              1
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "textAlign"
+              },
+              "justify"
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "lineCount"
+              },
+              2
+            ]
+          },
+          {
+            "lt": [
+              {
+                "field": "rect.w"
+              },
+              500
+            ]
+          },
+          {
+            "not": {
+              "equals": [
+                {
+                  "field": "hyphens"
+                },
+                "auto"
+              ]
+            }
+          }
+        ]
+      },
+      "message": "justified text runs in a narrow column without hyphenation",
+      "severity": "P3",
+      "layer": "content",
+      "id": "justified-narrow-text"
     },
     {
-      "id": "literal-uppercase-passage",
-      "enabled": true
+      "name": "literal-uppercase-passage",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "length": {
+                  "field": "text"
+                }
+              },
+              80
+            ]
+          },
+          {
+            "notEquals": [
+              {
+                "field": "textTransform"
+              },
+              "uppercase"
+            ]
+          },
+          {
+            "matches": [
+              {
+                "field": "text"
+              },
+              "^[^a-z]*$"
+            ]
+          }
+        ]
+      },
+      "message": "a long passage is written in literal uppercase",
+      "severity": "P3",
+      "layer": "content",
+      "id": "literal-uppercase-passage"
     },
     {
       "id": "missing-lang",
-      "enabled": true
+      "name": "missing-lang",
+      "scope": "page",
+      "when": {
+        "equals": [
+          {
+            "field": "page.lang"
+          },
+          null
+        ]
+      },
+      "message": "html element has no lang attribute",
+      "severity": "P2",
+      "layer": "layout"
     },
     {
-      "id": "missing-name",
-      "enabled": true
+      "name": "missing-name",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "interactive"
+              },
+              true
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "disabled"
+              },
+              false
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "name"
+              },
+              ""
+            ]
+          }
+        ]
+      },
+      "message": "interactive element has no accessible name",
+      "severity": "P1",
+      "layer": "layout",
+      "id": "missing-name"
     },
     {
       "id": "numeric-section-index",
-      "enabled": true
+      "name": "numeric-section-index",
+      "scope": "page",
+      "when": {
+        "gte": [
+          {
+            "countOf": [
+              {
+                "field": "page.elements"
+              },
+              {
+                "all": [
+                  {
+                    "lte": [
+                      {
+                        "length": {
+                          "field": "text"
+                        }
+                      },
+                      3
+                    ]
+                  },
+                  {
+                    "matches": [
+                      {
+                        "field": "text"
+                      },
+                      "^[0-9.)]+$"
+                    ]
+                  },
+                  {
+                    "lt": [
+                      {
+                        "field": "fontSize"
+                      },
+                      14
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "nextIsHeading"
+                      },
+                      true
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          2
+        ]
+      },
+      "message": "small numeric indexes ride beside repeated section headings",
+      "severity": "P3",
+      "layer": "content"
     },
     {
       "id": "opening-column-overrun",
-      "enabled": true
+      "name": "opening-column-overrun",
+      "scope": "page",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "length": {
+                  "filter": [
+                    {
+                      "field": "page.elements"
+                    },
+                    {
+                      "all": [
+                        {
+                          "lt": [
+                            {
+                              "field": "rect.y"
+                            },
+                            200
+                          ]
+                        },
+                        {
+                          "gte": [
+                            {
+                              "field": "rect.w"
+                            },
+                            150
+                          ]
+                        },
+                        {
+                          "gte": [
+                            {
+                              "field": "rect.h"
+                            },
+                            100
+                          ]
+                        },
+                        {
+                          "equals": [
+                            {
+                              "field": "interactive"
+                            },
+                            false
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              2
+            ]
+          },
+          {
+            "lte": [
+              {
+                "min": {
+                  "map": [
+                    {
+                      "filter": [
+                        {
+                          "field": "page.elements"
+                        },
+                        {
+                          "all": [
+                            {
+                              "lt": [
+                                {
+                                  "field": "rect.y"
+                                },
+                                200
+                              ]
+                            },
+                            {
+                              "gte": [
+                                {
+                                  "field": "rect.w"
+                                },
+                                150
+                              ]
+                            },
+                            {
+                              "gte": [
+                                {
+                                  "field": "rect.h"
+                                },
+                                100
+                              ]
+                            },
+                            {
+                              "equals": [
+                                {
+                                  "field": "interactive"
+                                },
+                                false
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "add": [
+                        {
+                          "field": "rect.y"
+                        },
+                        {
+                          "field": "rect.h"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "field": "page.viewport.height"
+              }
+            ]
+          },
+          {
+            "gt": [
+              {
+                "max": {
+                  "map": [
+                    {
+                      "filter": [
+                        {
+                          "field": "page.elements"
+                        },
+                        {
+                          "all": [
+                            {
+                              "lt": [
+                                {
+                                  "field": "rect.y"
+                                },
+                                200
+                              ]
+                            },
+                            {
+                              "gte": [
+                                {
+                                  "field": "rect.w"
+                                },
+                                150
+                              ]
+                            },
+                            {
+                              "gte": [
+                                {
+                                  "field": "rect.h"
+                                },
+                                100
+                              ]
+                            },
+                            {
+                              "equals": [
+                                {
+                                  "field": "interactive"
+                                },
+                                false
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "add": [
+                        {
+                          "field": "rect.y"
+                        },
+                        {
+                          "field": "rect.h"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "mul": [
+                  {
+                    "field": "page.viewport.height"
+                  },
+                  1.2
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "one opening column runs far past the fold while its sibling fits",
+      "severity": "P2",
+      "layer": "layout"
     },
     {
       "id": "overlapping-copy",
-      "enabled": true
+      "name": "overlapping-copy",
+      "scope": "page",
+      "when": {
+        "pairAny": [
+          {
+            "field": "page.elements"
+          },
+          {
+            "all": [
+              {
+                "all": [
+                  {
+                    "equals": [
+                      {
+                        "field": "left.visible"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "right.visible"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "left.hasText"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "right.hasText"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "notEquals": [
+                      {
+                        "field": "left.text"
+                      },
+                      {
+                        "field": "right.text"
+                      }
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "left.rect.w"
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "left.rect.h"
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "right.rect.w"
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "right.rect.h"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+              {
+                "not": {
+                  "ancestor": [
+                    {
+                      "field": "left.index"
+                    },
+                    {
+                      "field": "right.index"
+                    }
+                  ]
+                }
+              },
+              {
+                "gt": [
+                  {
+                    "sub": [
+                      {
+                        "min": [
+                          {
+                            "add": [
+                              {
+                                "field": "left.rect.x"
+                              },
+                              {
+                                "field": "left.rect.w"
+                              }
+                            ]
+                          },
+                          {
+                            "add": [
+                              {
+                                "field": "right.rect.x"
+                              },
+                              {
+                                "field": "right.rect.w"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "max": [
+                          {
+                            "field": "left.rect.x"
+                          },
+                          {
+                            "field": "right.rect.x"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  4
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "sub": [
+                      {
+                        "min": [
+                          {
+                            "add": [
+                              {
+                                "field": "left.rect.y"
+                              },
+                              {
+                                "field": "left.rect.h"
+                              }
+                            ]
+                          },
+                          {
+                            "add": [
+                              {
+                                "field": "right.rect.y"
+                              },
+                              {
+                                "field": "right.rect.h"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "max": [
+                          {
+                            "field": "left.rect.y"
+                          },
+                          {
+                            "field": "right.rect.y"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  4
+                ]
+              },
+              {
+                "gte": [
+                  {
+                    "div": [
+                      {
+                        "mul": [
+                          {
+                            "sub": [
+                              {
+                                "min": [
+                                  {
+                                    "add": [
+                                      {
+                                        "field": "left.rect.x"
+                                      },
+                                      {
+                                        "field": "left.rect.w"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "add": [
+                                      {
+                                        "field": "right.rect.x"
+                                      },
+                                      {
+                                        "field": "right.rect.w"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "max": [
+                                  {
+                                    "field": "left.rect.x"
+                                  },
+                                  {
+                                    "field": "right.rect.x"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "sub": [
+                              {
+                                "min": [
+                                  {
+                                    "add": [
+                                      {
+                                        "field": "left.rect.y"
+                                      },
+                                      {
+                                        "field": "left.rect.h"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "add": [
+                                      {
+                                        "field": "right.rect.y"
+                                      },
+                                      {
+                                        "field": "right.rect.h"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "max": [
+                                  {
+                                    "field": "left.rect.y"
+                                  },
+                                  {
+                                    "field": "right.rect.y"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "min": [
+                          {
+                            "mul": [
+                              {
+                                "field": "left.rect.w"
+                              },
+                              {
+                                "field": "left.rect.h"
+                              }
+                            ]
+                          },
+                          {
+                            "mul": [
+                              {
+                                "field": "right.rect.w"
+                              },
+                              {
+                                "field": "right.rect.h"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  0.35
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "text is painted under another text run",
+      "severity": "P2",
+      "layer": "layout"
     },
     {
-      "id": "oversized-headline",
-      "enabled": true
+      "name": "oversized-headline",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "in": [
+              {
+                "field": "tag"
+              },
+              [
+                "h1",
+                "h2",
+                "h3"
+              ]
+            ]
+          },
+          {
+            "gte": [
+              {
+                "length": {
+                  "field": "text"
+                }
+              },
+              40
+            ]
+          },
+          {
+            "any": [
+              {
+                "gte": [
+                  {
+                    "field": "fontSize"
+                  },
+                  48
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "field": "rect.h"
+                  },
+                  {
+                    "mul": [
+                      {
+                        "field": "page.viewport.height"
+                      },
+                      0.3
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "a full headline is set at display size and dominates the viewport",
+      "severity": "P2",
+      "layer": "content",
+      "id": "oversized-headline"
     },
     {
       "id": "oversized-italic-serif",
-      "enabled": true
+      "name": "oversized-italic-serif",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "in": [
+              {
+                "field": "tag"
+              },
+              [
+                "h1",
+                "h2"
+              ]
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "fontStyle"
+              },
+              "italic"
+            ]
+          },
+          {
+            "matches": [
+              {
+                "field": "fontFamily"
+              },
+              "(?i)serif|georgia|times"
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "fontSize"
+              },
+              40
+            ]
+          }
+        ]
+      },
+      "message": "an oversized italic serif headline carries the display voice",
+      "severity": "P3",
+      "layer": "content"
     },
     {
-      "id": "page-overflow",
-      "enabled": true
+      "name": "page-overflow",
+      "scope": "page",
+      "when": {
+        "gt": [
+          {
+            "field": "page.viewport.documentWidth"
+          },
+          {
+            "add": [
+              {
+                "field": "page.viewport.width"
+              },
+              1
+            ]
+          }
+        ]
+      },
+      "message": "document is wider than the viewport",
+      "severity": "P1",
+      "layer": "layout",
+      "id": "page-overflow"
     },
     {
       "id": "pill-eyebrow-label",
-      "enabled": true
+      "name": "pill-eyebrow-label",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "nextIsHeading"
+              },
+              true
+            ]
+          },
+          {
+            "lte": [
+              {
+                "length": {
+                  "field": "text"
+                }
+              },
+              40
+            ]
+          },
+          {
+            "any": [
+              {
+                "gte": [
+                  {
+                    "max": {
+                      "field": "radiusPx"
+                    }
+                  },
+                  999
+                ]
+              },
+              {
+                "all": [
+                  {
+                    "gt": [
+                      {
+                        "max": {
+                          "field": "radiusPx"
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "max": {
+                          "field": "padding"
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "alpha": {
+                          "field": "backgroundColor"
+                        }
+                      },
+                      0.1
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "the eyebrow is a filled pill chip rather than a label",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
-      "id": "positive-tabindex",
-      "enabled": true
+      "name": "positive-tabindex",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "number": {
+              "field": "tabindex"
+            }
+          },
+          {
+            "gt": [
+              {
+                "field": "tabindex"
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "message": "tabindex overrides document order",
+      "severity": "P3",
+      "layer": "layout",
+      "id": "positive-tabindex"
     },
     {
       "id": "primitive-svg-scene",
-      "enabled": true
+      "name": "primitive-svg-scene",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "tag"
+              },
+              "svg"
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "svgShapes"
+              },
+              12
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "rect.w"
+              },
+              320
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "rect.h"
+              },
+              200
+            ]
+          }
+        ]
+      },
+      "message": "a large inline SVG assembles a scene from primitive shapes",
+      "severity": "P3",
+      "layer": "content"
     },
     {
-      "id": "pulsing-status-dot",
-      "enabled": true
+      "name": "pulsing-status-dot",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "lte": [
+              {
+                "field": "rect.w"
+              },
+              16
+            ]
+          },
+          {
+            "lte": [
+              {
+                "field": "rect.h"
+              },
+              16
+            ]
+          },
+          {
+            "gte": [
+              {
+                "max": {
+                  "field": "radiusPx"
+                }
+              },
+              {
+                "mul": [
+                  {
+                    "min": [
+                      {
+                        "field": "rect.w"
+                      },
+                      {
+                        "field": "rect.h"
+                      }
+                    ]
+                  },
+                  0.5
+                ]
+              }
+            ]
+          },
+          {
+            "notEquals": [
+              {
+                "field": "animationName"
+              },
+              "none"
+            ]
+          },
+          {
+            "notEquals": [
+              {
+                "field": "animationDuration"
+              },
+              "0s"
+            ]
+          },
+          {
+            "contains": [
+              {
+                "field": "animationIterationCount"
+              },
+              "infinite"
+            ]
+          },
+          {
+            "not": {
+              "any": [
+                {
+                  "equals": [
+                    {
+                      "field": "role"
+                    },
+                    "status"
+                  ]
+                },
+                {
+                  "equals": [
+                    {
+                      "field": "ariaLive"
+                    },
+                    "polite"
+                  ]
+                },
+                {
+                  "equals": [
+                    {
+                      "field": "ariaLive"
+                    },
+                    "assertive"
+                  ]
+                },
+                {
+                  "equals": [
+                    {
+                      "field": "ariaBusy"
+                    },
+                    "true"
+                  ]
+                },
+                {
+                  "matches": [
+                    {
+                      "field": "text"
+                    },
+                    "(?i)running|live|online|active"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "message": "a small pulsing dot decorates the page without marking live state",
+      "severity": "P3",
+      "layer": "sheet",
+      "id": "pulsing-status-dot"
     },
     {
       "id": "radial-background-wash",
-      "enabled": true
+      "name": "radial-background-wash",
+      "scope": "page",
+      "when": {
+        "gt": [
+          {
+            "countOf": [
+              {
+                "field": "page.elements"
+              },
+              {
+                "all": [
+                  {
+                    "matches": [
+                      {
+                        "field": "backgroundImage"
+                      },
+                      "radial-gradient"
+                    ]
+                  },
+                  {
+                    "chromatic": {
+                      "field": "backgroundImage"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          0
+        ]
+      },
+      "message": "a chromatic radial wash decorates a dark background",
+      "severity": "P3",
+      "layer": "sheet"
     },
     {
       "id": "radial-spotlight",
-      "enabled": true
+      "name": "radial-spotlight",
+      "scope": "page",
+      "when": {
+        "all": [
+          {
+            "dark": {
+              "get": [
+                {
+                  "firstOf": [
+                    {
+                      "field": "page.elements"
+                    },
+                    {
+                      "equals": [
+                        {
+                          "field": "tag"
+                        },
+                        "body"
+                      ]
+                    }
+                  ]
+                },
+                "backgroundColor"
+              ]
+            }
+          },
+          {
+            "gt": [
+              {
+                "countOf": [
+                  {
+                    "field": "page.elements"
+                  },
+                  {
+                    "all": [
+                      {
+                        "matches": [
+                          {
+                            "field": "backgroundImage"
+                          },
+                          "radial-gradient"
+                        ]
+                      },
+                      {
+                        "chromatic": {
+                          "field": "backgroundImage"
+                        }
+                      },
+                      {
+                        "lt": [
+                          {
+                            "field": "rect.y"
+                          },
+                          {
+                            "field": "page.viewport.height"
+                          }
+                        ]
+                      },
+                      {
+                        "gt": [
+                          {
+                            "field": "rect.w"
+                          },
+                          {
+                            "mul": [
+                              {
+                                "field": "page.viewport.width"
+                              },
+                              0.4
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "gt": [
+                          {
+                            "field": "rect.h"
+                          },
+                          80
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "message": "a radial gradient sits behind a hero or section as a spotlight",
+      "severity": "P3",
+      "layer": "sheet"
     },
     {
       "id": "reflex-font-choice",
-      "enabled": true
+      "name": "reflex-font-choice",
+      "scope": "page",
+      "when": {
+        "groupAny": [
+          {
+            "filter": [
+              {
+                "field": "page.elements"
+              },
+              {
+                "all": [
+                  {
+                    "in": [
+                      {
+                        "field": "tag"
+                      },
+                      [
+                        "p",
+                        "li",
+                        "blockquote",
+                        "body"
+                      ]
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "hasText"
+                      },
+                      true
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "lower": {
+              "field": "fontFamily"
+            }
+          },
+          {
+            "all": [
+              {
+                "gte": [
+                  {
+                    "length": {
+                      "field": "values"
+                    }
+                  },
+                  3
+                ]
+              },
+              {
+                "matches": [
+                  {
+                    "field": "key"
+                  },
+                  "^[\"']?(inter|roboto|fraunces|geist|plus jakarta sans|space grotesk)\\b"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "the page leans on a reflex face",
+      "severity": "P3",
+      "layer": "content"
     },
     {
       "id": "repeated-container-copy",
-      "enabled": true
+      "name": "repeated-container-copy",
+      "scope": "page",
+      "when": {
+        "groupAny": [
+          {
+            "filter": [
+              {
+                "field": "page.elements"
+              },
+              {
+                "all": [
+                  {
+                    "equals": [
+                      {
+                        "field": "hasText"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "gte": [
+                      {
+                        "length": {
+                          "field": "text"
+                        }
+                      },
+                      1
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "join": [
+              {
+                "concat": [
+                  {
+                    "nearestCard": true
+                  },
+                  {
+                    "field": "text"
+                  }
+                ]
+              },
+              "|"
+            ]
+          },
+          {
+            "all": [
+              {
+                "gte": [
+                  {
+                    "length": {
+                      "field": "values"
+                    }
+                  },
+                  3
+                ]
+              },
+              {
+                "not": {
+                  "matches": [
+                    {
+                      "field": "key"
+                    },
+                    "^null\\|"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "message": "the same copy appears repeatedly in one container",
+      "severity": "P2",
+      "layer": "content"
     },
     {
-      "id": "repeating-stripe-surface",
-      "enabled": true
+      "name": "repeating-stripe-surface",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "matches": [
+          {
+            "field": "backgroundImage"
+          },
+          "repeating-(linear|radial)-gradient"
+        ]
+      },
+      "message": "repeating gradient stripes decorate a surface",
+      "severity": "P3",
+      "layer": "sheet",
+      "id": "repeating-stripe-surface"
     },
     {
       "id": "row-elevation-conflict",
-      "enabled": true
+      "name": "row-elevation-conflict",
+      "scope": "page",
+      "when": {
+        "groupAny": [
+          {
+            "filter": [
+              {
+                "field": "page.elements"
+              },
+              {
+                "all": [
+                  {
+                    "equals": [
+                      {
+                        "field": "cardLike"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "rect.h"
+                      },
+                      4
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "field": "rect.y"
+          },
+          {
+            "all": [
+              {
+                "gte": [
+                  {
+                    "length": {
+                      "field": "values"
+                    }
+                  },
+                  2
+                ]
+              },
+              {
+                "allOf": [
+                  {
+                    "field": "values"
+                  },
+                  {
+                    "all": [
+                      {
+                        "gt": [
+                          {
+                            "max": {
+                              "field": "borderWidths"
+                            }
+                          },
+                          0
+                        ]
+                      },
+                      {
+                        "lte": [
+                          {
+                            "max": {
+                              "field": "borderWidths"
+                            }
+                          },
+                          1.5
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "allOf": [
+                  {
+                    "field": "values"
+                  },
+                  {
+                    "gte": [
+                      {
+                        "shadowBlur": {
+                          "field": "focusStyle.boxShadow"
+                        }
+                      },
+                      8
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "cards share a hairline border and a wide shadow",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
       "id": "scroller-edge-flush",
-      "enabled": true
+      "name": "scroller-edge-flush",
+      "scope": "page",
+      "when": {
+        "groupAny": [
+          {
+            "filter": [
+              {
+                "field": "page.elements"
+              },
+              {
+                "all": [
+                  {
+                    "equals": [
+                      {
+                        "field": "cardLike"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "visible"
+                      },
+                      true
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "field": "parentIndex"
+          },
+          {
+            "all": [
+              {
+                "gte": [
+                  {
+                    "length": {
+                      "field": "values"
+                    }
+                  },
+                  2
+                ]
+              },
+              {
+                "any": [
+                  {
+                    "all": [
+                      {
+                        "between": [
+                          {
+                            "sub": [
+                              {
+                                "min": [
+                                  {
+                                    "map": [
+                                      {
+                                        "field": "values"
+                                      },
+                                      {
+                                        "field": "rect.x"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "get": [
+                                  {
+                                    "byIndex": [
+                                      {
+                                        "field": "page.elements"
+                                      },
+                                      {
+                                        "field": "key"
+                                      }
+                                    ]
+                                  },
+                                  "rect.x"
+                                ]
+                              }
+                            ]
+                          },
+                          -2,
+                          2
+                        ]
+                      },
+                      {
+                        "gte": [
+                          {
+                            "sub": [
+                              {
+                                "add": [
+                                  {
+                                    "get": [
+                                      {
+                                        "byIndex": [
+                                          {
+                                            "field": "page.elements"
+                                          },
+                                          {
+                                            "field": "key"
+                                          }
+                                        ]
+                                      },
+                                      "rect.x"
+                                    ]
+                                  },
+                                  {
+                                    "get": [
+                                      {
+                                        "byIndex": [
+                                          {
+                                            "field": "page.elements"
+                                          },
+                                          {
+                                            "field": "key"
+                                          }
+                                        ]
+                                      },
+                                      "rect.w"
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "max": [
+                                  {
+                                    "map": [
+                                      {
+                                        "field": "values"
+                                      },
+                                      {
+                                        "add": [
+                                          {
+                                            "field": "rect.x"
+                                          },
+                                          {
+                                            "field": "rect.w"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          12
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "all": [
+                      {
+                        "between": [
+                          {
+                            "sub": [
+                              {
+                                "add": [
+                                  {
+                                    "get": [
+                                      {
+                                        "byIndex": [
+                                          {
+                                            "field": "page.elements"
+                                          },
+                                          {
+                                            "field": "key"
+                                          }
+                                        ]
+                                      },
+                                      "rect.x"
+                                    ]
+                                  },
+                                  {
+                                    "get": [
+                                      {
+                                        "byIndex": [
+                                          {
+                                            "field": "page.elements"
+                                          },
+                                          {
+                                            "field": "key"
+                                          }
+                                        ]
+                                      },
+                                      "rect.w"
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "max": [
+                                  {
+                                    "map": [
+                                      {
+                                        "field": "values"
+                                      },
+                                      {
+                                        "add": [
+                                          {
+                                            "field": "rect.x"
+                                          },
+                                          {
+                                            "field": "rect.w"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          -2,
+                          2
+                        ]
+                      },
+                      {
+                        "gte": [
+                          {
+                            "sub": [
+                              {
+                                "min": [
+                                  {
+                                    "map": [
+                                      {
+                                        "field": "values"
+                                      },
+                                      {
+                                        "field": "rect.x"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "get": [
+                                  {
+                                    "byIndex": [
+                                      {
+                                        "field": "page.elements"
+                                      },
+                                      {
+                                        "field": "key"
+                                      }
+                                    ]
+                                  },
+                                  "rect.x"
+                                ]
+                              }
+                            ]
+                          },
+                          12
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "scrolling cards touch one container edge while the other side keeps a gutter",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
-      "id": "short-heading-tail",
-      "enabled": true
+      "name": "short-heading-tail",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "in": [
+              {
+                "field": "tag"
+              },
+              [
+                "h1",
+                "h2",
+                "h3"
+              ]
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "lineCount"
+              },
+              2
+            ]
+          },
+          {
+            "gt": [
+              {
+                "field": "maxLineWidth"
+              },
+              0
+            ]
+          },
+          {
+            "lt": [
+              {
+                "field": "lastLineWidth"
+              },
+              {
+                "mul": [
+                  {
+                    "field": "maxLineWidth"
+                  },
+                  0.45
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "a heading wraps with a much shorter last line",
+      "severity": "P3",
+      "layer": "content",
+      "id": "short-heading-tail"
     },
     {
-      "id": "short-last-line",
-      "enabled": true
+      "name": "short-last-line",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "in": [
+              {
+                "field": "tag"
+              },
+              [
+                "p",
+                "li",
+                "blockquote"
+              ]
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "lineCount"
+              },
+              2
+            ]
+          },
+          {
+            "gt": [
+              {
+                "field": "maxLineWidth"
+              },
+              0
+            ]
+          },
+          {
+            "lt": [
+              {
+                "field": "lastLineWidth"
+              },
+              {
+                "mul": [
+                  {
+                    "field": "maxLineWidth"
+                  },
+                  0.3
+                ]
+              }
+            ]
+          },
+          {
+            "gte": [
+              {
+                "words": {
+                  "field": "text"
+                }
+              },
+              6
+            ]
+          }
+        ]
+      },
+      "message": "the last line holds a single short word",
+      "severity": "P3",
+      "layer": "content",
+      "id": "short-last-line"
     },
     {
       "id": "sibling-text-collision",
-      "enabled": true
+      "name": "sibling-text-collision",
+      "scope": "page",
+      "when": {
+        "pairAny": [
+          {
+            "field": "page.elements"
+          },
+          {
+            "all": [
+              {
+                "all": [
+                  {
+                    "equals": [
+                      {
+                        "field": "left.visible"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "right.visible"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "left.hasText"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "right.hasText"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "notEquals": [
+                      {
+                        "field": "left.text"
+                      },
+                      {
+                        "field": "right.text"
+                      }
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "left.rect.w"
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "left.rect.h"
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "right.rect.w"
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "right.rect.h"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+              {
+                "equals": [
+                  {
+                    "field": "left.parentIndex"
+                  },
+                  {
+                    "field": "right.parentIndex"
+                  }
+                ]
+              },
+              {
+                "any": [
+                  {
+                    "notEquals": [
+                      {
+                        "field": "left.display"
+                      },
+                      "inline"
+                    ]
+                  },
+                  {
+                    "notEquals": [
+                      {
+                        "field": "right.display"
+                      },
+                      "inline"
+                    ]
+                  }
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "sub": [
+                      {
+                        "min": [
+                          {
+                            "add": [
+                              {
+                                "field": "left.rect.x"
+                              },
+                              {
+                                "field": "left.rect.w"
+                              }
+                            ]
+                          },
+                          {
+                            "add": [
+                              {
+                                "field": "right.rect.x"
+                              },
+                              {
+                                "field": "right.rect.w"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "max": [
+                          {
+                            "field": "left.rect.x"
+                          },
+                          {
+                            "field": "right.rect.x"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  4
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "sub": [
+                      {
+                        "min": [
+                          {
+                            "add": [
+                              {
+                                "field": "left.rect.y"
+                              },
+                              {
+                                "field": "left.rect.h"
+                              }
+                            ]
+                          },
+                          {
+                            "add": [
+                              {
+                                "field": "right.rect.y"
+                              },
+                              {
+                                "field": "right.rect.h"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "max": [
+                          {
+                            "field": "left.rect.y"
+                          },
+                          {
+                            "field": "right.rect.y"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  4
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "text runs into a sibling box",
+      "severity": "P2",
+      "layer": "layout"
     },
     {
-      "id": "sub-11px-control-text",
-      "enabled": true
+      "name": "sub-11px-control-text",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "any": [
+          {
+            "all": [
+              {
+                "equals": [
+                  {
+                    "field": "interactive"
+                  },
+                  true
+                ]
+              },
+              {
+                "lt": [
+                  {
+                    "field": "fontSize"
+                  },
+                  11
+                ]
+              },
+              {
+                "gte": [
+                  {
+                    "length": {
+                      "field": "text"
+                    }
+                  },
+                  1
+                ]
+              }
+            ]
+          },
+          {
+            "all": [
+              {
+                "equals": [
+                  {
+                    "field": "interactive"
+                  },
+                  false
+                ]
+              },
+              {
+                "lt": [
+                  {
+                    "field": "fontSize"
+                  },
+                  10
+                ]
+              },
+              {
+                "gte": [
+                  {
+                    "length": {
+                      "field": "text"
+                    }
+                  },
+                  1
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "UI text is below its floor",
+      "severity": "P2",
+      "layer": "content",
+      "id": "sub-11px-control-text"
     },
     {
-      "id": "sub-12px-body",
-      "enabled": true
+      "name": "sub-12px-body",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "interactive"
+              },
+              false
+            ]
+          },
+          {
+            "gte": [
+              {
+                "length": {
+                  "field": "text"
+                }
+              },
+              20
+            ]
+          },
+          {
+            "lt": [
+              {
+                "field": "fontSize"
+              },
+              12
+            ]
+          }
+        ]
+      },
+      "message": "body text is below 12px",
+      "severity": "P2",
+      "layer": "content",
+      "id": "sub-12px-body"
     },
     {
       "id": "synthetic-purple-palette",
-      "enabled": true
+      "name": "synthetic-purple-palette",
+      "scope": "page",
+      "when": {
+        "all": [
+          {
+            "dark": {
+              "get": [
+                {
+                  "firstOf": [
+                    {
+                      "field": "page.elements"
+                    },
+                    {
+                      "equals": [
+                        {
+                          "field": "tag"
+                        },
+                        "body"
+                      ]
+                    }
+                  ]
+                },
+                "backgroundColor"
+              ]
+            }
+          },
+          {
+            "any": [
+              {
+                "all": [
+                  {
+                    "gt": [
+                      {
+                        "countOf": [
+                          {
+                            "field": "page.elements"
+                          },
+                          {
+                            "any": [
+                              {
+                                "all": [
+                                  {
+                                    "chromatic": {
+                                      "field": "color"
+                                    }
+                                  },
+                                  {
+                                    "between": [
+                                      {
+                                        "hue": {
+                                          "field": "color"
+                                        }
+                                      },
+                                      250,
+                                      330
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "all": [
+                                  {
+                                    "chromatic": {
+                                      "field": "backgroundColor"
+                                    }
+                                  },
+                                  {
+                                    "between": [
+                                      {
+                                        "hue": {
+                                          "field": "backgroundColor"
+                                        }
+                                      },
+                                      250,
+                                      330
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "all": [
+                                  {
+                                    "chromatic": {
+                                      "field": "backgroundImage"
+                                    }
+                                  },
+                                  {
+                                    "between": [
+                                      {
+                                        "hue": {
+                                          "field": "backgroundImage"
+                                        }
+                                      },
+                                      250,
+                                      330
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "countOf": [
+                          {
+                            "field": "page.elements"
+                          },
+                          {
+                            "any": [
+                              {
+                                "all": [
+                                  {
+                                    "chromatic": {
+                                      "field": "color"
+                                    }
+                                  },
+                                  {
+                                    "between": [
+                                      {
+                                        "hue": {
+                                          "field": "color"
+                                        }
+                                      },
+                                      175,
+                                      210
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "all": [
+                                  {
+                                    "chromatic": {
+                                      "field": "backgroundColor"
+                                    }
+                                  },
+                                  {
+                                    "between": [
+                                      {
+                                        "hue": {
+                                          "field": "backgroundColor"
+                                        }
+                                      },
+                                      175,
+                                      210
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "all": [
+                                  {
+                                    "chromatic": {
+                                      "field": "backgroundImage"
+                                    }
+                                  },
+                                  {
+                                    "between": [
+                                      {
+                                        "hue": {
+                                          "field": "backgroundImage"
+                                        }
+                                      },
+                                      175,
+                                      210
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+              {
+                "gte": [
+                  {
+                    "countOf": [
+                      {
+                        "field": "page.elements"
+                      },
+                      {
+                        "any": [
+                          {
+                            "chromatic": {
+                              "field": "color"
+                            }
+                          },
+                          {
+                            "chromatic": {
+                              "field": "backgroundColor"
+                            }
+                          },
+                          {
+                            "chromatic": {
+                              "field": "backgroundImage"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  3
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "the palette leans on violet or cyan neon on a dark ground",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
-      "id": "target-size",
-      "enabled": true
+      "name": "target-size",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "interactive"
+              },
+              true
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "disabled"
+              },
+              false
+            ]
+          },
+          {
+            "any": [
+              {
+                "lt": [
+                  {
+                    "field": "rect.w"
+                  },
+                  44
+                ]
+              },
+              {
+                "lt": [
+                  {
+                    "field": "rect.h"
+                  },
+                  44
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "target is smaller than 44x44px",
+      "severity": "P2",
+      "layer": "layout",
+      "id": "target-size"
     },
     {
       "id": "tight-container-inset",
-      "enabled": true
+      "name": "tight-container-inset",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "length": {
+                  "field": "text"
+                }
+              },
+              10
+            ]
+          },
+          {
+            "lt": [
+              {
+                "max": {
+                  "field": "padding"
+                }
+              },
+              16
+            ]
+          },
+          {
+            "any": [
+              {
+                "gt": [
+                  {
+                    "max": {
+                      "field": "borderWidths"
+                    }
+                  },
+                  0
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "alpha": {
+                      "field": "backgroundColor"
+                    }
+                  },
+                  0.1
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "text sits too close to a visible container edge",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
-      "id": "tight-line-height",
-      "enabled": true
+      "name": "tight-line-height",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "length": {
+                  "field": "text"
+                }
+              },
+              1
+            ]
+          },
+          {
+            "gte": [
+              {
+                "field": "lineCount"
+              },
+              2
+            ]
+          },
+          {
+            "number": {
+              "field": "fontSize"
+            }
+          },
+          {
+            "number": {
+              "field": "lineHeight"
+            }
+          },
+          {
+            "gt": [
+              {
+                "field": "fontSize"
+              },
+              0
+            ]
+          },
+          {
+            "lt": [
+              {
+                "div": [
+                  {
+                    "field": "lineHeight"
+                  },
+                  {
+                    "field": "fontSize"
+                  }
+                ]
+              },
+              1.3
+            ]
+          }
+        ]
+      },
+      "message": "line height is below 1.3",
+      "severity": "P2",
+      "layer": "content",
+      "id": "tight-line-height"
     },
     {
       "id": "unblurred-offset-shadow",
-      "enabled": true
+      "name": "unblurred-offset-shadow",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "not": {
+              "shadowInset": {
+                "field": "focusStyle.boxShadow"
+              }
+            }
+          },
+          {
+            "lt": [
+              {
+                "shadowBlur": {
+                  "field": "focusStyle.boxShadow"
+                }
+              },
+              1
+            ]
+          },
+          {
+            "gt": [
+              {
+                "shadowAlpha": {
+                  "field": "focusStyle.boxShadow"
+                }
+              },
+              0.15
+            ]
+          },
+          {
+            "gte": [
+              {
+                "shadowOffset": {
+                  "field": "focusStyle.boxShadow"
+                }
+              },
+              4
+            ]
+          }
+        ]
+      },
+      "message": "an unblurred shadow is displaced by at least 4px",
+      "severity": "P3",
+      "layer": "sheet"
     },
     {
       "id": "uniform-spacing",
-      "enabled": true
+      "name": "uniform-spacing",
+      "scope": "page",
+      "when": {
+        "all": [
+          {
+            "gte": [
+              {
+                "length": {
+                  "concat": [
+                    {
+                      "flatMap": [
+                        {
+                          "field": "page.elements"
+                        },
+                        {
+                          "if": [
+                            {
+                              "all": [
+                                {
+                                  "equals": [
+                                    {
+                                      "field": "visible"
+                                    },
+                                    true
+                                  ]
+                                },
+                                {
+                                  "equals": [
+                                    {
+                                      "field": "hasText"
+                                    },
+                                    true
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "concat": [
+                                {
+                                  "filter": [
+                                    {
+                                      "field": "margin"
+                                    },
+                                    {
+                                      "gt": [
+                                        {
+                                          "field": "self"
+                                        },
+                                        0
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "filter": [
+                                    {
+                                      "field": "padding"
+                                    },
+                                    {
+                                      "gt": [
+                                        {
+                                          "field": "self"
+                                        },
+                                        0
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            []
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flatMap": [
+                        {
+                          "field": "page.elements"
+                        },
+                        {
+                          "if": [
+                            {
+                              "equals": [
+                                {
+                                  "field": "visible"
+                                },
+                                true
+                              ]
+                            },
+                            {
+                              "filter": [
+                                {
+                                  "field": "gap"
+                                },
+                                {
+                                  "gt": [
+                                    {
+                                      "field": "self"
+                                    },
+                                    0
+                                  ]
+                                }
+                              ]
+                            },
+                            []
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              8
+            ]
+          },
+          {
+            "lte": [
+              {
+                "uniqueCount": {
+                  "concat": [
+                    {
+                      "flatMap": [
+                        {
+                          "field": "page.elements"
+                        },
+                        {
+                          "if": [
+                            {
+                              "all": [
+                                {
+                                  "equals": [
+                                    {
+                                      "field": "visible"
+                                    },
+                                    true
+                                  ]
+                                },
+                                {
+                                  "equals": [
+                                    {
+                                      "field": "hasText"
+                                    },
+                                    true
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "concat": [
+                                {
+                                  "filter": [
+                                    {
+                                      "field": "margin"
+                                    },
+                                    {
+                                      "gt": [
+                                        {
+                                          "field": "self"
+                                        },
+                                        0
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "filter": [
+                                    {
+                                      "field": "padding"
+                                    },
+                                    {
+                                      "gt": [
+                                        {
+                                          "field": "self"
+                                        },
+                                        0
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            []
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flatMap": [
+                        {
+                          "field": "page.elements"
+                        },
+                        {
+                          "if": [
+                            {
+                              "equals": [
+                                {
+                                  "field": "visible"
+                                },
+                                true
+                              ]
+                            },
+                            {
+                              "filter": [
+                                {
+                                  "field": "gap"
+                                },
+                                {
+                                  "gt": [
+                                    {
+                                      "field": "self"
+                                    },
+                                    0
+                                  ]
+                                }
+                              ]
+                            },
+                            []
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              2
+            ]
+          }
+        ]
+      },
+      "message": "the same spacing value is repeated everywhere",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
-      "id": "viewport-edge-text",
-      "enabled": true
+      "name": "viewport-edge-text",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "in": [
+              {
+                "field": "tag"
+              },
+              [
+                "p",
+                "li",
+                "blockquote",
+                "td"
+              ]
+            ]
+          },
+          {
+            "gte": [
+              {
+                "length": {
+                  "field": "text"
+                }
+              },
+              40
+            ]
+          },
+          {
+            "gt": [
+              {
+                "field": "rect.w"
+              },
+              0
+            ]
+          },
+          {
+            "lt": [
+              {
+                "add": [
+                  {
+                    "field": "padding.1"
+                  },
+                  {
+                    "field": "padding.3"
+                  }
+                ]
+              },
+              4
+            ]
+          },
+          {
+            "any": [
+              {
+                "all": [
+                  {
+                    "lt": [
+                      {
+                        "field": "page.viewport.width"
+                      },
+                      600
+                    ]
+                  },
+                  {
+                    "any": [
+                      {
+                        "lt": [
+                          {
+                            "field": "rect.x"
+                          },
+                          12
+                        ]
+                      },
+                      {
+                        "lt": [
+                          {
+                            "sub": [
+                              {
+                                "field": "page.viewport.width"
+                              },
+                              {
+                                "add": [
+                                  {
+                                    "field": "rect.x"
+                                  },
+                                  {
+                                    "field": "rect.w"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          12
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "all": [
+                  {
+                    "gte": [
+                      {
+                        "field": "page.viewport.width"
+                      },
+                      600
+                    ]
+                  },
+                  {
+                    "any": [
+                      {
+                        "lt": [
+                          {
+                            "field": "rect.x"
+                          },
+                          16
+                        ]
+                      },
+                      {
+                        "lt": [
+                          {
+                            "sub": [
+                              {
+                                "field": "page.viewport.width"
+                              },
+                              {
+                                "add": [
+                                  {
+                                    "field": "rect.x"
+                                  },
+                                  {
+                                    "field": "rect.w"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          16
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "body text sits within the viewport edge",
+      "severity": "P2",
+      "layer": "layout",
+      "id": "viewport-edge-text"
     },
     {
       "id": "washed-grey-on-tint",
-      "enabled": true
+      "name": "washed-grey-on-tint",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "lt": [
+              {
+                "chroma": {
+                  "field": "color"
+                }
+              },
+              12
+            ]
+          },
+          {
+            "gt": [
+              {
+                "chroma": {
+                  "field": "backgroundColor"
+                }
+              },
+              30
+            ]
+          }
+        ]
+      },
+      "message": "grey text sits on a chromatic background and reads washed out",
+      "severity": "P3",
+      "layer": "layout"
     },
     {
       "id": "washed-out-image",
-      "enabled": true
+      "name": "washed-out-image",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "matches": [
+              {
+                "field": "backgroundImage"
+              },
+              "url\\("
+            ]
+          },
+          {
+            "any": [
+              {
+                "gte": [
+                  {
+                    "alpha": {
+                      "field": "backgroundColor"
+                    }
+                  },
+                  0.85
+                ]
+              },
+              {
+                "lte": [
+                  {
+                    "field": "opacity"
+                  },
+                  0.1
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "a raster sits under a near-opaque wash or at near-zero opacity",
+      "severity": "P2",
+      "layer": "sheet"
     }
   ]
 }
