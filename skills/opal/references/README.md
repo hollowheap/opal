@@ -1,10 +1,14 @@
 # Rule packs
 
-`default-rules.json` is the generic advisory floor. Project packs overlay named rules by id and append structural rules. A pack that tightens a default keeps the same id so the overlay is explicit. A same-id entry is a deliberate tightening, not drift; the stricter pack must not loosen the default.
+`default-rules.json` is the version 2 generic advisory floor. Project packs overlay named rules by id and append declarative rules. A pack that tightens a default keeps the same id so the overlay is explicit. A same-id entry is a deliberate tightening, not drift; the stricter pack must not loosen the default. The whole rule format is documented in `docs/rules-format.md`; the schema is `rules.schema.json`.
+
+A version 2 rule carries a selector, optional ancestor and exception conditions, a list of property tests, an optional operator, optional cardinality, and an optional lifecycle point. The closed verb set is `in`, `notIn`, `equals`, `notEquals`, `present`, and `absent`; multi-value properties may use `components` and attributes may use `attributes`.
+
+Names that resolve to no compiled behaviour, no alias baseline, and no rule body are reported as coverage gaps, never skipped. The four former dead names `aphoristic-cadence`, `dark-glow`, `edge-flush-cards`, and `script-error` have no implementation and are not part of the floor.
 
 ## Named rules and fixed checks
 
-The default pack has two kinds of entries. The named rules are the ten advisory checks above. The fixed checks are the engine checks that used to be hardcoded: 52 entries covering layout, type, colour, imagery, motion, and the baseline accessibility checks. Their entries are explicit so a project can see the whole floor, disable a check, or override its severity and layer. The fixed entries carry no parameters yet; their detection logic stays in the engine.
+The default pack has two kinds of entries. The named rules are the compiled advisory behaviours. The fixed checks are the engine checks that used to be hardcoded: 52 entries covering layout, type, colour, imagery, motion, and the baseline accessibility checks. Their entries are explicit so a project can see the whole floor, disable a check, or override its severity and layer. The fixed entries carry no parameters yet; their detection logic stays in the engine. `docs/rules-decoupling.md` records why each compiled behaviour stays.
 
 A fixed-check entry leaves the engine's native `P0`–`P3` severity and layer alone unless it sets `severity` or `layer`. Disabling one removes its findings from the report and from `summary.byCheck`.
 
