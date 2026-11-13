@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "pack": "lifecycle-test",
+  "rules": [
+    {
+      "name": "skeleton-at-first-paint",
+      "selector": ".skeleton",
+      "lifecycle": "first-paint",
+      "properties": {
+        "display": { "equals": "block" }
+      }
+    },
+    {
+      "name": "skeleton-at-settled",
+      "selector": ".skeleton",
+      "lifecycle": "settled",
+      "properties": {
+        "display": { "equals": "block" }
+      }
+    }
+  ]
+}

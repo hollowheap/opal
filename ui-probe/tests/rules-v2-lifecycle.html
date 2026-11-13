@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>rule lifecycle</title>
+<style>.skeleton { display: block; color: #111; } .loaded { display: none; }</style>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  setTimeout(function () {
+    var el = document.querySelector('.skeleton');
+    if (el) { el.className = 'loaded'; }
+  }, 120);
+});
+</script>
+</head><body><div class="skeleton">loading</div></body></html>

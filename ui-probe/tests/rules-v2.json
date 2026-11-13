@@ -1,0 +1,87 @@
+{
+  "version": 2,
+  "pack": "format-v2-test",
+  "aliases": {
+    "button": ["btn", "button"],
+    "card": ["card", "panel"]
+  },
+  "rules": [
+    {
+      "name": "skeleton-card-composition",
+      "selectors": [".skeleton", ".card"],
+      "operator": "all",
+      "matchOperator": "all",
+      "properties": {
+        "background-color": { "in": "colors" }
+      }
+    },
+    {
+      "name": "bare-selector",
+      "selector": ".panel"
+    },
+    {
+      "name": "fill-composed",
+      "selector": ".good-fill, .bad-fill, .clear-fill",
+      "operator": "all",
+      "properties": {
+        "background-color": [
+          { "present": true },
+          { "notIn": "colors" }
+        ]
+      }
+    },
+    {
+      "name": "padding-components",
+      "selector": ".pad-good, .pad-bad",
+      "operator": "any",
+      "properties": {
+        "padding": {
+          "components": {
+            "top": { "notIn": "spacing" },
+            "right": { "notIn": "spacing" },
+            "bottom": { "notIn": "spacing" },
+            "left": { "notIn": "spacing" }
+          }
+        }
+      }
+    },
+    {
+      "name": "card-count",
+      "selector": ".card",
+      "cardinality": { "min": 2, "max": 2 }
+    },
+    {
+      "name": "component-membership",
+      "selector": "[data-component]",
+      "attributes": {
+        "data-component": { "notIn": ["card", "button"] }
+      }
+    },
+    {
+      "name": "membership-shorthand",
+      "selector": "[data-component]",
+      "membership": {
+        "data-component": ["card", "button"]
+      }
+    },
+    {
+      "name": "card-exceptions",
+      "selector": ".card",
+      "exceptions": [".exempt"],
+      "properties": {
+        "background-color": { "in": "colors" }
+      }
+    },
+    {
+      "name": "kind-aliases",
+      "selector": ".button",
+      "properties": {
+        "border-top-left-radius": { "in": "radii" }
+      }
+    },
+    {
+      "name": "unresolved-name",
+      "id": "totally-unknown-rule"
+    }
+  ]
+}

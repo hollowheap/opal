@@ -1,0 +1,14 @@
+{
+  "color": {
+    "ink": { "$value": "#111111", "$type": "color" },
+    "brand": { "$value": "#0055ff", "$type": "color" },
+    "white": { "$value": "#ffffff", "$type": "color" }
+  },
+  "spacing": {
+    "sm": { "$value": "8px", "$type": "dimension" },
+    "md": { "$value": "16px", "$type": "dimension" }
+  },
+  "radius": {
+    "sm": { "$value": "4px", "$type": "dimension" }
+  }
+}

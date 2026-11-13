@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>rule format v2</title>
+<style>
+body { margin: 0; font-family: sans-serif; }
+.skeleton, .card, .panel { padding: 8px 16px; border: 1px solid #222; }
+.card, .skeleton { background: #ffffff; }
+.good-fill { background: #0055ff; color: #ffffff; }
+.bad-fill { background: #ff00ff; color: #ffffff; }
+.clear-fill { background: transparent; color: #111111; }
+.pad-good { padding: 8px 16px 8px 16px; }
+.pad-bad { padding: 8px 13px 8px 16px; }
+.btn { border-radius: 4px; }
+.exempt { background: #123456; }
+</style></head>
+<body>
+<div class="skeleton card" data-component="card">both</div>
+<div class="skeleton" data-component="skeleton">one</div>
+<div class="panel card">plain card</div>
+<div class="panel card">second card</div>
+<div class="panel card exempt">exempt card</div>
+<button class="btn good-fill" data-component="button">ok</button>
+<button class="btn bad-fill" data-component="button">bad</button>
+<button class="btn clear-fill" data-component="button">clear</button>
+<button class="btn unknown-fill" data-component="widget">widget</button>
+<div class="pad-good">good padding</div>
+<div class="pad-bad">bad padding</div>
+</body></html>
