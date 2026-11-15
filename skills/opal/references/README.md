@@ -2,15 +2,15 @@
 
 `default-rules.json` is the version 2 generic advisory floor. Project packs overlay named rules by id and append declarative rules. A pack that tightens a default keeps the same id so the overlay is explicit. A same-id entry is a deliberate tightening, not drift; the stricter pack must not loosen the default. The whole rule format is documented in `docs/rules-format.md`; the schema is `rules.schema.json`.
 
-A version 2 rule carries a selector, optional ancestor and exception conditions, a list of property tests, an optional operator, optional cardinality, and an optional lifecycle point. The closed verb set is `in`, `notIn`, `equals`, `notEquals`, `present`, and `absent`; multi-value properties may use `components` and attributes may use `attributes`.
+A version 2 rule carries a selector, optional ancestor and exception conditions, a list of property tests, an optional operator, optional cardinality, and an optional lifecycle point. The closed verb set is `in`, `notIn`, `equals`, `notEquals`, `present`, and `absent`; multi-value properties may use `components`, attributes may use `attributes`, and `when` expressions cover derived measurements.
 
-Names that resolve to no compiled behaviour, no alias baseline, and no rule body are reported as coverage gaps, never skipped. The four former dead names `aphoristic-cadence`, `dark-glow`, `edge-flush-cards`, and `script-error` have no implementation and are not part of the floor.
+Names that resolve to no default rule, alias baseline, or declarative rule body are reported as coverage gaps, never skipped. The three former dead names `aphoristic-cadence`, `edge-flush-cards`, and `script-error` have no implementation and are not part of the floor.
 
-## Named rules and fixed checks
+## Default and optional packs
 
-The default pack has two kinds of entries. The named rules are the compiled advisory behaviours. The fixed checks are the engine checks that used to be hardcoded: 52 entries covering layout, type, colour, imagery, motion, and the baseline accessibility checks. Their entries are explicit so a project can see the whole floor, disable a check, or override its severity and layer. The fixed entries carry no parameters yet; their detection logic stays in the engine. `docs/rules-decoupling.md` records why each compiled behaviour stays.
+All 78 `.rules` entries and 10 `.sourceRules` entries in `default-rules.json` are declarative. The structural `no-gradient-text` rule is declarative too. A project can see the whole floor, disable a rule, or override its severity and layer.
 
-A fixed-check entry leaves the engine's native `P0`–`P3` severity and layer alone unless it sets `severity` or `layer`. Disabling one removes its findings from the report and from `summary.byCheck`.
+`optional-rules.json` carries generic non-default behaviours. A project can extend that pack and select its rule ids. `gpt-thin-border-wide-shadow` is not shipped under that id; the optional behaviour is `hairline-border-wide-shadow`.
 
 ## Default and tightened pairs
 
@@ -32,7 +32,3 @@ The fixed range is a surface-specific tightening. The relational law is the gene
 ## Content patterns
 
 `rebuttal-cadence` and `dismissive-copy` are parameterised content-pattern rules. Packs can override their patterns and thresholds without engine changes.
-
-## Scrub state
-
-The default pack does not ship `gpt-thin-border-wide-shadow` under any id. The house removed that rule from every pack copy on 2026-11-08; the engine may still know the id for explicitly supplied packs, but the shipped floor must not bring it back.

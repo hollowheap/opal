@@ -314,4 +314,4 @@ The run includes a note such as:
 
 The capture module produces evidence sets at named lifecycle points. The design module reads design files into token sets and catalogue lists. The pack module parses packs and resolves names. The evaluation module applies resolved rules to evidence sets and is the only place a finding is born. The output module renders findings with provenance.
 
-Compiled behaviours stand behind the same resolution surface as pack rules. The decoupling ledger names the behaviours that remain compiled and the fault that keeps each one there; see `docs/rules-decoupling.md`.
+All default rendered, stylesheet, and static source rules (`sourceRules`) live declaratively in `skills/opal/references/default-rules.json` rather than compiled rule branches.
