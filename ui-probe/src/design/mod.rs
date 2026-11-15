@@ -1,11 +1,12 @@
 use crate::{
-    duration_values, parse_css_color, sort_value_entries, split_top_level, visible_elements,
+    duration_values, parse_css_color, sort_value_entries, split_top_level, visible_element_refs,
 };
 use anyhow::{Context, Result};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 pub(crate) struct DesignSpec {
     pub(crate) colors: Option<Vec<(i64, i64, i64)>>,
@@ -518,7 +519,9 @@ pub(crate) fn sheet_contains_color(text: &str, expected: &str) -> bool {
     let Some(target) = parse_color_rgb(expected) else {
         return text.to_lowercase().contains(&expected.to_lowercase());
     };
-    let pattern = Regex::new(r"(?i)#[0-9a-f]{3,8}\b|rgba?\([^)]*\)").unwrap();
+    static COLOR_RE: OnceLock<Regex> = OnceLock::new();
+    let pattern =
+        COLOR_RE.get_or_init(|| Regex::new(r"(?i)#[0-9a-f]{3,8}\b|rgba?\([^)]*\)").unwrap());
     let found = pattern
         .find_iter(text)
         .filter_map(|value| parse_color_rgb(value.as_str()))
@@ -541,7 +544,7 @@ pub(crate) fn design_checks(
     let mut findings = Vec::new();
     let mut seen = HashSet::new();
 
-    for element in visible_elements(baseline) {
+    for element in visible_element_refs(baseline) {
         let selector = element["selector"].as_str().unwrap_or("?").to_string();
 
         if let Some(allowed) = &spec.colors {
@@ -586,9 +589,9 @@ pub(crate) fn design_checks(
 
         if let Some(allowed) = &spec.spacing {
             let values = [
-                element["padding"].as_array().cloned().unwrap_or_default(),
-                element["margin"].as_array().cloned().unwrap_or_default(),
-                element["gap"].as_array().cloned().unwrap_or_default(),
+                element["padding"].as_array().into_iter().flatten(),
+                element["margin"].as_array().into_iter().flatten(),
+                element["gap"].as_array().into_iter().flatten(),
             ];
             for value in values.into_iter().flatten() {
                 let Some(number) = value.as_f64() else {
@@ -612,7 +615,7 @@ pub(crate) fn design_checks(
         }
 
         if let Some(allowed) = &spec.radii {
-            for value in element["radius"].as_array().cloned().unwrap_or_default() {
+            for value in element["radius"].as_array().into_iter().flatten() {
                 let Some(raw) = value.as_str() else {
                     continue;
                 };
@@ -659,7 +662,7 @@ pub(crate) fn design_checks(
 
     if let Some(steps) = &spec.typography {
         let sizes: Vec<f64> = steps.iter().map(|step| step.size).collect();
-        for element in visible_elements(baseline) {
+        for element in visible_element_refs(baseline) {
             if !element["hasText"].as_bool().unwrap_or(false) {
                 continue;
             }
@@ -693,7 +696,7 @@ pub(crate) fn design_checks(
         if let Some(surface) = surfaces.get(scheme) {
             if let Some(expected) = surface.get("caret").and_then(Value::as_str) {
                 if let Some(expected_rgb) = parse_color_rgb(expected) {
-                    for element in visible_elements(baseline) {
+                    for element in visible_element_refs(baseline) {
                         let tag = element["tag"].as_str().unwrap_or("");
                         if tag != "input" && tag != "textarea" {
                             continue;
@@ -751,7 +754,7 @@ pub(crate) fn design_checks(
             }
         }
         if !ranges.is_empty() {
-            for element in visible_elements(baseline) {
+            for element in visible_element_refs(baseline) {
                 for raw in [
                     element["transitionDuration"].as_str().unwrap_or(""),
                     element["animationDuration"].as_str().unwrap_or(""),
@@ -832,7 +835,7 @@ pub(crate) fn infer_design(baseline: &Value) -> (Value, Vec<Value>) {
     let mut typography: std::collections::HashMap<String, (Value, u64)> =
         std::collections::HashMap::new();
 
-    for element in visible_elements(baseline) {
+    for element in visible_element_refs(baseline) {
         if let Some(raw) = element["color"].as_str() {
             if opaque_sampled(raw) {
                 if let Some(rgb) = parse_color_rgb(raw) {
@@ -850,9 +853,9 @@ pub(crate) fn infer_design(baseline: &Value) -> (Value, Vec<Value>) {
             }
         }
         for value in [
-            element["padding"].as_array().cloned().unwrap_or_default(),
-            element["margin"].as_array().cloned().unwrap_or_default(),
-            element["gap"].as_array().cloned().unwrap_or_default(),
+            element["padding"].as_array().into_iter().flatten(),
+            element["margin"].as_array().into_iter().flatten(),
+            element["gap"].as_array().into_iter().flatten(),
         ]
         .into_iter()
         .flatten()
@@ -863,7 +866,7 @@ pub(crate) fn infer_design(baseline: &Value) -> (Value, Vec<Value>) {
                 }
             }
         }
-        for value in element["radius"].as_array().cloned().unwrap_or_default() {
+        for value in element["radius"].as_array().into_iter().flatten() {
             if let Some(raw) = value.as_str() {
                 if let Some((number, _)) = parse_dimension(raw) {
                     if number > 0.0 {

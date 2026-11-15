@@ -1,68 +1,10 @@
 use crate::finding_fingerprint;
-use anyhow::{Context, Result};
-use regex::Regex;
+use crate::rules::SourceRule;
+use anyhow::Result;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-const SOURCE_RULES: &[(&str, &str, &str, &str)] = &[
-    (
-        "raw-color",
-        "P2",
-        "raw color literal",
-        r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(",
-    ),
-    (
-        "outline-none",
-        "P2",
-        "focus outline suppressed",
-        r"outline:\s*none|outline-none",
-    ),
-    (
-        "transition-all",
-        "P3",
-        "transition on every property",
-        r"transition-all|transition:\s*all",
-    ),
-    (
-        "will-change",
-        "P3",
-        "manual compositor hint",
-        r"will-change",
-    ),
-    (
-        "gradient-text",
-        "P3",
-        "gradient text",
-        r"bg-clip-text|text-transparent",
-    ),
-    (
-        "glass",
-        "P3",
-        "decorative blur",
-        r"backdrop-blur|backdrop-filter",
-    ),
-    ("viewport-width", "P3", "100vw sizing", r"100vw"),
-    (
-        "arbitrary-px",
-        "P3",
-        "arbitrary pixel value",
-        r"\[[0-9]+px\]",
-    ),
-    (
-        "clickable-div",
-        "P2",
-        "click handler on a non-control",
-        r"<(div|span)[^>]*(onClick|@click)",
-    ),
-    (
-        "motion",
-        "P3",
-        "motion declaration",
-        r"@keyframes|animation:|animate-",
-    ),
-];
 
 fn parse_ignore_ids(raw: &str) -> HashSet<String> {
     let cleaned = raw.trim_start_matches(|c: char| c == ':' || c.is_whitespace());
@@ -218,18 +160,7 @@ pub(crate) struct SourceScan {
     pub files: usize,
 }
 
-pub(crate) fn scan(root: &Path, all: bool) -> Result<SourceScan> {
-    let rules: Vec<(&str, &str, &str, Regex)> = SOURCE_RULES
-        .iter()
-        .map(|(id, severity, message, pattern)| {
-            Ok((
-                *id,
-                *severity,
-                *message,
-                Regex::new(pattern).context("compile source rule")?,
-            ))
-        })
-        .collect::<Result<_>>()?;
+pub(crate) fn scan(root: &Path, all: bool, source_rules: &[SourceRule]) -> Result<SourceScan> {
     let mut findings = Vec::new();
     let mut suppressed = 0usize;
     let mut scanned = 0usize;
@@ -247,57 +178,83 @@ pub(crate) fn scan(root: &Path, all: bool) -> Result<SourceScan> {
             .unwrap_or(path)
             .to_string_lossy()
             .to_string();
-        let name = path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("");
-        let token_file = name.starts_with("tokens.")
-            || name.starts_with("theme.")
-            || name.contains(".tokens.")
-            || relative.starts_with("tokens/")
-            || relative.contains("/tokens/");
+        let relative_norm = relative.replace('\\', "/");
+        let active_rules: Vec<(&SourceRule, String)> = source_rules
+            .iter()
+            .filter(|rule| {
+                !rule
+                    .exclude_paths
+                    .iter()
+                    .any(|exclude| exclude.is_match(&relative_norm))
+            })
+            .map(|rule| (rule, rule.id.to_ascii_lowercase()))
+            .collect();
+        if active_rules.is_empty() {
+            continue;
+        }
         for (line_number, line) in content.lines().enumerate() {
-            for (id, severity, message, regex) in &rules {
-                if token_file && *id == "raw-color" {
+            for (rule, ignore_key) in &active_rules {
+                if !rule.pattern.is_match(line) {
                     continue;
                 }
-                if !regex.is_match(line) {
-                    continue;
-                }
-                let ignored = file_ignores.contains(*id)
+                let ignored = file_ignores.contains(ignore_key)
                     || file_ignores.contains("*")
                     || line_ignores
                         .get(&(line_number + 1))
-                        .map(|set| set.contains(*id) || set.contains("*"))
+                        .map(|set| set.contains(ignore_key) || set.contains("*"))
                         .unwrap_or(false);
                 if ignored {
                     suppressed += 1;
                     continue;
                 }
                 let mut finding = json!({
-                    "check": id,
-                    "layer": "source",
-                    "severity": severity,
+                    "check": rule.id,
+                    "layer": rule.layer,
+                    "severity": rule.severity,
                     "file": relative,
                     "line": line_number + 1,
-                    "message": message,
+                    "message": rule.message,
                     "evidence": {
                         "text": line.trim().chars().take(160).collect::<String>()
                     }
                 });
+                if !rule.source.is_empty() {
+                    finding["ruleSource"] = json!(rule.source);
+                    finding["packSource"] = json!(rule.source);
+                }
                 finding["fingerprint"] = json!(finding_fingerprint(&finding));
                 findings.push(finding);
             }
         }
     }
-    findings.sort_by_key(
-        |finding| match finding["severity"].as_str().unwrap_or("P3") {
-            "P0" => 0,
+    findings.sort_by(|left, right| {
+        let rank = |finding: &Value| match finding["severity"].as_str().unwrap_or("P3") {
+            "P0" | "error" => 0,
             "P1" => 1,
             "P2" => 2,
             _ => 3,
-        },
-    );
+        };
+        rank(left)
+            .cmp(&rank(right))
+            .then_with(|| {
+                left["file"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(right["file"].as_str().unwrap_or(""))
+            })
+            .then_with(|| {
+                left["line"]
+                    .as_u64()
+                    .unwrap_or(0)
+                    .cmp(&right["line"].as_u64().unwrap_or(0))
+            })
+            .then_with(|| {
+                left["check"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(right["check"].as_str().unwrap_or(""))
+            })
+    });
     Ok(SourceScan {
         findings,
         suppressed,

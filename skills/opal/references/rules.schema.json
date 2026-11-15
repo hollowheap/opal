@@ -56,6 +56,10 @@
     "rules": {
       "type": "array",
       "items": { "$ref": "#/$defs/rule" }
+    },
+    "sourceRules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sourceRule" }
     }
   },
   "$defs": {
@@ -529,9 +533,30 @@
           "enum": ["error", "advisory", "P0", "P1", "P2", "P3"]
         },
         "layer": {
-          "enum": ["layout", "sheet", "content", "source", "runtime"]
+          "enum": ["layout", "sheet", "content", "source"]
         },
         "params": { "type": "object" }
+      }
+    },
+    "sourceRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" },
+        "severity": {
+          "enum": ["error", "advisory", "P0", "P1", "P2", "P3"]
+        },
+        "layer": {
+          "enum": ["layout", "sheet", "content", "source"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "pattern": { "type": "string", "minLength": 1 },
+        "excludePaths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
       }
     }
   }

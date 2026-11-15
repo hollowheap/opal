@@ -1,16 +1,21 @@
 use crate::{
-    font_families, generic_family, is_overshooting, oracle_from_value, parse_color_rgb,
-    parse_css_color, parse_dimension, radius_allowed, DesignSpec, Oracle,
+    duration_values, font_families, generic_family, is_overshooting, oracle_from_value,
+    parse_color_rgb, parse_css_color, parse_dimension, radius_allowed, DesignSpec, Oracle,
 };
 use anyhow::{Context, Result};
 use regex::Regex;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 pub(crate) struct RuleSet {
     structural: Vec<StructuralRule>,
     checks: Vec<CheckRule>,
+    source_rules: Vec<SourceRule>,
     selectors: Vec<String>,
     properties: Vec<String>,
     coverage: Vec<Value>,
@@ -87,7 +92,22 @@ pub(crate) struct CheckRule {
     layer: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct SourceRule {
+    pub id: String,
+    pub severity: String,
+    pub layer: String,
+    pub message: String,
+    pub pattern: Regex,
+    pub exclude_paths: Vec<Regex>,
+    pub source: String,
+}
+
 impl RuleSet {
+    pub(crate) fn source_rules(&self) -> &[SourceRule] {
+        &self.source_rules
+    }
+
     pub(crate) fn selectors(&self) -> &[String] {
         &self.selectors
     }
@@ -131,6 +151,7 @@ pub(crate) const CSS_PROPERTIES: &[&str] = &[
     "animation-duration",
     "animation-name",
     "animation-timing-function",
+    "backdrop-filter",
     "background",
     "background-clip",
     "background-color",
@@ -199,6 +220,7 @@ pub(crate) const CSS_PROPERTIES: &[&str] = &[
     "text-overflow",
     "text-transform",
     "transition-duration",
+    "transition-property",
     "transition-timing-function",
     "visibility",
     "white-space",
@@ -302,6 +324,7 @@ pub(crate) fn read_rules(path: &Path) -> Result<Value> {
             "pack",
             "structural",
             "rules",
+            "sourceRules",
             "extends",
             "aliases",
             "alias",
@@ -403,9 +426,11 @@ pub(crate) fn merge_rules(sources: &[PathBuf]) -> Result<Option<Value>> {
     let mut version = 1u64;
     let mut structural = Vec::new();
     let mut named = Vec::new();
+    let mut source_rules: Vec<Value> = Vec::new();
     let mut aliases = serde_json::Map::new();
     let mut rule_aliases = serde_json::Map::new();
     let mut seen_ids: HashSet<String> = HashSet::new();
+    let mut source_rule_indexes: HashMap<String, usize> = HashMap::new();
     for source in sources {
         let data = read_rules(source)?;
         let label = source.display().to_string();
@@ -457,6 +482,26 @@ pub(crate) fn merge_rules(sources: &[PathBuf]) -> Result<Option<Value>> {
             }
             named.push(rule);
         }
+        for mut rule in data["sourceRules"].as_array().cloned().unwrap_or_default() {
+            let identity = rule["id"].as_str().unwrap_or("").to_string();
+            if let Some(object) = rule.as_object_mut() {
+                object.insert("_source".to_string(), json!(label));
+            }
+            if !identity.is_empty() {
+                if let Some(&index) = source_rule_indexes.get(&identity) {
+                    if let (Some(target), Some(lower)) =
+                        (source_rules[index].as_object_mut(), rule.as_object())
+                    {
+                        for (key, value) in lower {
+                            target.entry(key.clone()).or_insert_with(|| value.clone());
+                        }
+                    }
+                    continue;
+                }
+                source_rule_indexes.insert(identity, source_rules.len());
+            }
+            source_rules.push(rule);
+        }
     }
     let mut merged = json!({
         "version": version,
@@ -464,6 +509,9 @@ pub(crate) fn merge_rules(sources: &[PathBuf]) -> Result<Option<Value>> {
         "structural": structural,
         "rules": named
     });
+    if !source_rules.is_empty() {
+        merged["sourceRules"] = Value::Array(source_rules);
+    }
     if !aliases.is_empty() {
         merged["aliases"] = Value::Object(aliases);
     }
@@ -504,7 +552,7 @@ fn default_pack_data() -> Result<Value> {
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("read default rules file {}", path.display()))?;
     let mut data: Value = serde_json::from_str(&text).context("parse default rules")?;
-    for key in ["rules", "structural"] {
+    for key in ["rules", "structural", "sourceRules"] {
         if let Some(rules) = data[key].as_array_mut() {
             for rule in rules {
                 if let Some(object) = rule.as_object_mut() {
@@ -559,40 +607,104 @@ pub(crate) fn load_rules_with_default(
             indexes.insert(identity, index);
         }
     }
+    let custom_rules = custom["rules"].as_array().cloned().unwrap_or_default();
     let mut extra_rules = Vec::new();
-    for rule in custom["rules"].as_array().cloned().unwrap_or_default() {
-        let identity = rule_identity(&rule);
+    let mut extra_indexes: HashMap<String, usize> = HashMap::new();
+    let mut seen_default_declarative = HashSet::new();
+    for rule in custom_rules.iter().filter(|rule| declarative_rule(rule)) {
+        let identity = rule_identity(rule);
         if let Some(index) = indexes.get(&identity).copied() {
-            if declarative_rule(&rule) {
-                default_rules[index] = rule;
-                continue;
+            if seen_default_declarative.insert(identity) {
+                default_rules[index] = rule.clone();
             }
-            let Some(target) = default_rules[index].as_object_mut() else {
-                continue;
-            };
-            if rule["enabled"].as_bool() == Some(false) {
-                target.insert("enabled".to_string(), json!(false));
-            }
-            for key in ["severity", "layer"] {
-                if let Some(value) = rule.get(key) {
-                    target.insert(key.to_string(), value.clone());
-                }
-            }
-            if let Some(params) = rule.get("params") {
-                target.insert("params".to_string(), params.clone());
-            }
-            if let Some(source) = rule.get("_source") {
-                target.insert("_source".to_string(), source.clone());
-            }
-        } else {
-            if custom_version == 1 && !declarative_rule(&rule) {
-                anyhow::bail!("rules: unknown rule id {identity}");
-            }
-            extra_rules.push(rule);
+        } else if let std::collections::hash_map::Entry::Vacant(entry) =
+            extra_indexes.entry(identity)
+        {
+            entry.insert(extra_rules.len());
+            extra_rules.push(rule.clone());
         }
+    }
+    let apply_overlay = |target: &mut Value, rule: &Value| {
+        let Some(target) = target.as_object_mut() else {
+            return;
+        };
+        if rule["enabled"].as_bool() == Some(false) {
+            target.insert("enabled".to_string(), json!(false));
+        }
+        for key in ["severity", "layer"] {
+            if let Some(value) = rule.get(key) {
+                target.insert(key.to_string(), value.clone());
+            }
+        }
+        if let Some(params) = rule.get("params") {
+            target.insert("params".to_string(), params.clone());
+        }
+        if let Some(source) = rule.get("_source") {
+            target.insert("_source".to_string(), source.clone());
+        }
+    };
+    for rule in custom_rules.iter().filter(|rule| !declarative_rule(rule)) {
+        let identity = rule_identity(rule);
+        if let Some(index) = indexes.get(&identity).copied() {
+            apply_overlay(&mut default_rules[index], rule);
+            continue;
+        }
+        if let Some(index) = extra_indexes.get(&identity).copied() {
+            apply_overlay(&mut extra_rules[index], rule);
+            continue;
+        }
+        if custom_version == 1 {
+            anyhow::bail!("rules: unknown rule id {identity}");
+        }
+        extra_rules.push(rule.clone());
     }
     default_rules.extend(extra_rules);
     default["rules"] = Value::Array(default_rules);
+    let mut default_source = default["sourceRules"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut source_indexes: HashMap<String, usize> = HashMap::new();
+    for (index, rule) in default_source.iter().enumerate() {
+        let identity = rule_identity(rule);
+        if !identity.is_empty() {
+            source_indexes.insert(identity, index);
+        }
+    }
+    let mut extra_source: Vec<Value> = Vec::new();
+    let mut extra_source_indexes: HashMap<String, usize> = HashMap::new();
+    for rule in custom["sourceRules"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    {
+        let identity = rule_identity(&rule);
+        if identity.is_empty() {
+            anyhow::bail!("rules: source rule needs an id");
+        }
+        if let Some(index) = source_indexes.get(&identity).copied() {
+            if let Some(target) = default_source[index].as_object_mut() {
+                if let Some(overlay) = rule.as_object() {
+                    for (key, value) in overlay {
+                        target.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        } else if let Some(index) = extra_source_indexes.get(&identity).copied() {
+            if let Some(target) = extra_source[index].as_object_mut() {
+                if let Some(overlay) = rule.as_object() {
+                    for (key, value) in overlay {
+                        target.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        } else {
+            extra_source_indexes.insert(identity, extra_source.len());
+            extra_source.push(rule);
+        }
+    }
+    default_source.extend(extra_source);
+    default["sourceRules"] = Value::Array(default_source);
     let mut structural = default["structural"]
         .as_array()
         .cloned()
@@ -1600,11 +1712,73 @@ pub(crate) fn parse_rules_v2(
     for rule in data["rules"].as_array().cloned().unwrap_or_default() {
         parse_rule(&rule)?;
     }
+    let mut source_rules = Vec::new();
+    for rule in data["sourceRules"].as_array().cloned().unwrap_or_default() {
+        check_keys(
+            &rule,
+            &[
+                "id",
+                "enabled",
+                "severity",
+                "layer",
+                "message",
+                "pattern",
+                "excludePaths",
+                "_source",
+            ],
+            "source rule",
+        )?;
+        let id = rule["id"].as_str().unwrap_or("").trim().to_string();
+        if id.is_empty() {
+            anyhow::bail!("rules: source rule needs an id");
+        }
+        let source = rule["_source"].as_str().unwrap_or("").to_string();
+        if rule["enabled"].as_bool() == Some(false) {
+            continue;
+        }
+        let severity = rule["severity"].as_str().unwrap_or("P3").to_string();
+        let layer = rule["layer"].as_str().unwrap_or("source").to_string();
+        validate_severity_layer(&severity, &layer)?;
+        let message = rule["message"]
+            .as_str()
+            .filter(|value| !value.trim().is_empty())
+            .with_context(|| format!("rules: source rule {id} needs a message"))?
+            .to_string();
+        let pattern_raw = rule["pattern"]
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .with_context(|| format!("rules: source rule {id} needs a pattern"))?;
+        let pattern = Regex::new(pattern_raw)
+            .with_context(|| format!("rules: invalid regex in source rule {id}"))?;
+        let mut exclude_paths = Vec::new();
+        if let Some(list) = rule.get("excludePaths").and_then(Value::as_array) {
+            for item in list {
+                let pat = item
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .with_context(|| format!("rules: invalid excludePaths entry in {id}"))?;
+                exclude_paths.push(
+                    Regex::new(pat)
+                        .with_context(|| format!("rules: invalid excludePaths regex in {id}"))?,
+                );
+            }
+        }
+        source_rules.push(SourceRule {
+            id,
+            severity,
+            layer,
+            message,
+            pattern,
+            exclude_paths,
+            source,
+        });
+    }
 
     Ok((
         RuleSet {
             structural,
             checks,
+            source_rules,
             selectors,
             properties,
             coverage,
@@ -1727,39 +1901,6 @@ pub(crate) fn deny_value_matches(property: &str, actual: &str, expected: &str) -
     } else {
         actual.eq_ignore_ascii_case(expected)
     }
-}
-
-pub(crate) fn ancestor_any(elements: &[Value], index: usize, matches: &HashSet<usize>) -> bool {
-    let mut current = elements[index]["parentIndex"].as_u64();
-    while let Some(parent) = current {
-        if matches.contains(&(parent as usize)) {
-            return true;
-        }
-        current = elements
-            .get(parent as usize)
-            .and_then(|element| element["parentIndex"].as_u64());
-    }
-    false
-}
-
-pub(crate) fn descendant_any(elements: &[Value], index: usize, matches: &HashSet<usize>) -> bool {
-    for &candidate in matches {
-        if candidate == index {
-            continue;
-        }
-        let mut current = elements
-            .get(candidate)
-            .and_then(|element| element["parentIndex"].as_u64());
-        while let Some(parent) = current {
-            if parent as usize == index {
-                return true;
-            }
-            current = elements
-                .get(parent as usize)
-                .and_then(|element| element["parentIndex"].as_u64());
-        }
-    }
-    false
 }
 
 pub(crate) fn element_ignored(element: &Value, rule: &str) -> bool {
@@ -1896,12 +2037,8 @@ pub(crate) fn empty_property_value(property: &str, actual: &str) -> bool {
             return alpha <= 0.001;
         }
     }
-    if value == "none"
+    value == "none"
         && (property == "border" || property == "outline" || property == "background-image")
-    {
-        return true;
-    }
-    false
 }
 
 pub(crate) fn literal_value_matches(property: &str, actual: &str, expected: &str) -> bool {
@@ -2146,20 +2283,207 @@ fn expr_path<'a>(root: &'a Value, path: &str) -> &'a Value {
     current
 }
 
-fn expr_field<'a>(path: &str, element: &'a Value, page: &'a Value, sheet: &'a str) -> Value {
-    if let Some(path) = path.strip_prefix("page.") {
-        return expr_path(page, path).clone();
+#[derive(Clone, Copy)]
+enum EvalScope<'a> {
+    None,
+    Pair { left: &'a Value, right: &'a Value },
+    Group { key: &'a Value, values: &'a Value },
+}
+
+#[derive(Clone, Copy)]
+struct EvalEnv<'a> {
+    element: &'a Value,
+    page: &'a Value,
+    sheet: &'a str,
+    rule_params: &'a Value,
+    parents: &'a [Option<usize>],
+    scope: EvalScope<'a>,
+}
+
+impl<'a> EvalEnv<'a> {
+    fn for_root(
+        element: &'a Value,
+        page: &'a Value,
+        sheet: &'a str,
+        rule_params: &'a Value,
+        parents: &'a [Option<usize>],
+    ) -> Self {
+        Self {
+            element,
+            page,
+            sheet,
+            rule_params,
+            parents,
+            scope: EvalScope::None,
+        }
+    }
+
+    fn with_element(&self, element: &'a Value) -> Self {
+        Self {
+            element,
+            page: self.page,
+            sheet: self.sheet,
+            rule_params: self.rule_params,
+            parents: self.parents,
+            scope: EvalScope::None,
+        }
+    }
+
+    fn with_pair(&self, left: &'a Value, right: &'a Value) -> Self {
+        Self {
+            element: self.element,
+            page: self.page,
+            sheet: self.sheet,
+            rule_params: self.rule_params,
+            parents: self.parents,
+            scope: EvalScope::Pair { left, right },
+        }
+    }
+
+    fn with_group(&self, key: &'a Value, values: &'a Value) -> Self {
+        Self {
+            element: self.element,
+            page: self.page,
+            sheet: self.sheet,
+            rule_params: self.rule_params,
+            parents: self.parents,
+            scope: EvalScope::Group { key, values },
+        }
+    }
+}
+
+fn expr_field_cow<'a>(path: &str, env: &EvalEnv<'a>) -> Cow<'a, Value> {
+    if let Some(rest) = path.strip_prefix("page.") {
+        if rest == "ruleParams" {
+            return Cow::Borrowed(env.rule_params);
+        }
+        if let Some(param_path) = rest.strip_prefix("ruleParams.") {
+            return Cow::Borrowed(expr_path(env.rule_params, param_path));
+        }
+        return Cow::Borrowed(expr_path(env.page, rest));
     }
     if path == "page" {
-        return page.clone();
-    }
-    if path == "self" || path == "." {
-        return element.clone();
+        return Cow::Borrowed(env.page);
     }
     if path == "sheet" || path == "sheet.text" {
-        return json!(sheet);
+        return Cow::Owned(json!(env.sheet));
     }
-    expr_path(element, path).clone()
+    match env.scope {
+        EvalScope::None => {
+            if path == "self" || path == "." {
+                Cow::Borrowed(env.element)
+            } else {
+                Cow::Borrowed(expr_path(env.element, path))
+            }
+        }
+        EvalScope::Pair { left, right } => {
+            if path == "left" {
+                Cow::Borrowed(left)
+            } else if let Some(rest) = path.strip_prefix("left.") {
+                Cow::Borrowed(expr_path(left, rest))
+            } else if path == "right" {
+                Cow::Borrowed(right)
+            } else if let Some(rest) = path.strip_prefix("right.") {
+                Cow::Borrowed(expr_path(right, rest))
+            } else if path == "self" || path == "." {
+                Cow::Owned(json!({ "left": left, "right": right }))
+            } else {
+                Cow::Borrowed(&Value::Null)
+            }
+        }
+        EvalScope::Group { key, values } => {
+            if path == "key" {
+                Cow::Borrowed(key)
+            } else if let Some(rest) = path.strip_prefix("key.") {
+                Cow::Borrowed(expr_path(key, rest))
+            } else if path == "values" {
+                Cow::Borrowed(values)
+            } else if let Some(rest) = path.strip_prefix("values.") {
+                Cow::Borrowed(expr_path(values, rest))
+            } else if path == "self" || path == "." {
+                Cow::Owned(json!({ "key": key, "values": values }))
+            } else {
+                Cow::Borrowed(&Value::Null)
+            }
+        }
+    }
+}
+
+fn operand_args(operand: &Value) -> &[Value] {
+    match operand {
+        Value::Array(values) => values.as_slice(),
+        other => std::slice::from_ref(other),
+    }
+}
+
+fn cached_regex_with<R>(pattern: &str, f: impl FnOnce(&Regex) -> R) -> Option<R> {
+    thread_local! {
+        static REGEX_CACHE: RefCell<HashMap<String, Option<Regex>>> = RefCell::new(HashMap::new());
+    }
+    REGEX_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if !cache.contains_key(pattern) {
+            if cache.len() >= 512 {
+                cache.clear();
+            }
+            cache.insert(pattern.to_string(), Regex::new(pattern).ok());
+        }
+        cache.get(pattern).and_then(|entry| entry.as_ref()).map(f)
+    })
+}
+
+#[derive(Hash, PartialEq, Eq)]
+enum ExactKey {
+    Null,
+    Bool(bool),
+    Int(i128),
+    FloatBits(u64),
+    Str(String),
+    Complex(String),
+}
+
+fn exact_key(value: &Value) -> ExactKey {
+    match value {
+        Value::Null => ExactKey::Null,
+        Value::Bool(value) => ExactKey::Bool(*value),
+        Value::Number(number) => {
+            if let Some(value) = number.as_u64() {
+                ExactKey::Int(value as i128)
+            } else if let Some(value) = number.as_i64() {
+                ExactKey::Int(value as i128)
+            } else if let Some(value) = number.as_f64() {
+                ExactKey::FloatBits(if value == 0.0 { 0 } else { value.to_bits() })
+            } else {
+                ExactKey::Complex(number.to_string())
+            }
+        }
+        Value::String(value) => ExactKey::Str(value.clone()),
+        other => ExactKey::Complex(other.to_string()),
+    }
+}
+
+#[derive(Hash, PartialEq, Eq)]
+enum JoinBucket {
+    Null,
+    Bool(bool),
+    NumBin(i64),
+    Str(String),
+    Fallback,
+}
+
+fn join_bucket(value: &Value) -> JoinBucket {
+    if let Some(number) = expr_number(value) {
+        if number.is_finite() && number.abs() < 1e13 {
+            return JoinBucket::NumBin((number * 500.0).round() as i64);
+        }
+        return JoinBucket::Fallback;
+    }
+    match value {
+        Value::Null => JoinBucket::Null,
+        Value::Bool(value) => JoinBucket::Bool(*value),
+        Value::String(value) => JoinBucket::Str(value.to_ascii_lowercase()),
+        _ => JoinBucket::Fallback,
+    }
 }
 
 fn expr_truthy(value: &Value) -> bool {
@@ -2196,32 +2520,38 @@ fn expr_equal(left: &Value, right: &Value) -> bool {
     }
 }
 
-fn expr_text(value: &Value) -> String {
+fn expr_text_cow(value: &Value) -> Cow<'_, str> {
     match value {
-        Value::String(value) => value.clone(),
-        other => other.to_string(),
+        Value::String(value) => Cow::Borrowed(value.as_str()),
+        other => Cow::Owned(other.to_string()),
     }
 }
 
-fn expr_colors(value: &Value) -> Vec<(f64, f64, f64, f64)> {
-    let text = expr_text(value);
+fn expr_colors_str(text: &str) -> Vec<(f64, f64, f64, f64)> {
+    static HEX_RE: OnceLock<Regex> = OnceLock::new();
+    static RGB_RE: OnceLock<Regex> = OnceLock::new();
+    let hex_re =
+        HEX_RE.get_or_init(|| Regex::new(r"#[0-9a-fA-F]{3,8}\b").expect("valid hex regex"));
+    let rgb_re = RGB_RE.get_or_init(|| Regex::new(r"rgba?\([^)]*\)").expect("valid rgb regex"));
     let mut out = Vec::new();
-    for pattern in [r"#[0-9a-fA-F]{3,8}\b", r"rgba?\([^)]*\)"] {
-        let Ok(regex) = Regex::new(pattern) else {
-            continue;
-        };
-        for capture in regex.find_iter(&text) {
+    for regex in [hex_re, rgb_re] {
+        for capture in regex.find_iter(text) {
             if let Some(color) = parse_color_alpha(capture.as_str()) {
                 out.push(color);
             }
         }
     }
     if out.is_empty() {
-        if let Some(color) = parse_color_alpha(&text) {
+        if let Some(color) = parse_color_alpha(text) {
             out.push(color);
         }
     }
     out
+}
+
+fn expr_colors(value: &Value) -> Vec<(f64, f64, f64, f64)> {
+    let text = expr_text_cow(value);
+    expr_colors_str(&text)
 }
 
 fn expr_color(value: &Value) -> Option<(f64, f64, f64, f64)> {
@@ -2253,12 +2583,11 @@ fn expr_hue(color: (f64, f64, f64, f64)) -> f64 {
 type ShadowParts = (f64, f64, f64, f64, (f64, f64, f64, f64), bool);
 
 fn expr_shadow(value: &Value) -> Option<ShadowParts> {
-    let text = expr_text(value);
-    let first = text.split("),").next().unwrap_or(&text);
+    static PX_RE: OnceLock<Regex> = OnceLock::new();
+    let text = expr_text_cow(value);
+    let first = text.split("),").next().unwrap_or(text.as_ref());
     let inset = first.contains("inset");
-    let Ok(regex) = Regex::new(r"(-?\d*\.?\d+)px") else {
-        return None;
-    };
+    let regex = PX_RE.get_or_init(|| Regex::new(r"(-?\d*\.?\d+)px").expect("valid px regex"));
     let numbers: Vec<f64> = regex
         .captures_iter(first)
         .filter_map(|capture| capture[1].parse::<f64>().ok())
@@ -2266,7 +2595,7 @@ fn expr_shadow(value: &Value) -> Option<ShadowParts> {
     if numbers.len() < 3 {
         return None;
     }
-    let color = expr_colors(&json!(first))
+    let color = expr_colors_str(first)
         .into_iter()
         .next()
         .unwrap_or((0.0, 0.0, 0.0, 1.0));
@@ -2280,416 +2609,1076 @@ fn expr_shadow(value: &Value) -> Option<ShadowParts> {
     ))
 }
 
-fn eval_expr(expr: &Value, element: &Value, page: &Value, sheet: &str) -> Value {
+fn collect_all_conjuncts<'a>(expr: &'a Value, out: &mut Vec<&'a Value>) {
+    if let Some(object) = expr.as_object() {
+        if object.len() == 1 {
+            if let Some((op, operand)) = object.iter().next() {
+                if matches!(op.as_str(), "all" | "and") {
+                    for item in operand_args(operand) {
+                        collect_all_conjuncts(item, out);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+    out.push(expr);
+}
+
+fn expr_scope_usage(expr: &Value) -> (bool, bool, bool) {
     let Some(object) = expr.as_object() else {
-        return expr.clone();
+        return (false, false, false);
     };
     if let Some(path) = object.get("field").and_then(Value::as_str) {
-        return expr_field(path, element, page, sheet);
+        if path == "page" || path.starts_with("page.") || path == "sheet" || path == "sheet.text" {
+            return (false, false, false);
+        }
+        if path == "left" || path.starts_with("left.") {
+            return (true, false, false);
+        }
+        if path == "right" || path.starts_with("right.") {
+            return (false, true, false);
+        }
+        return (false, false, true);
     }
     if object.len() != 1 {
-        return Value::Null;
+        return (false, false, false);
     }
     let (op, operand) = object.iter().next().unwrap();
-    if matches!(op.as_str(), "map" | "flatMap" | "filter") {
-        let Some(items) = operand
-            .as_array()
-            .and_then(|values| values.first())
-            .map(|value| eval_expr(value, element, page, sheet))
-            .and_then(|value| value.as_array().cloned())
-        else {
-            return Value::Array(Vec::new());
-        };
-        let Some(predicate) = operand.as_array().and_then(|values| values.get(1)) else {
-            return Value::Array(Vec::new());
-        };
-        let mut out = Vec::new();
-        for item in items {
-            let value = eval_expr(predicate, &item, page, sheet);
-            match op.as_str() {
-                "filter" => {
-                    if expr_truthy(&value) {
-                        out.push(item);
+    if matches!(
+        op.as_str(),
+        "nearestCard"
+            | "contrast"
+            | "map"
+            | "flatMap"
+            | "filter"
+            | "groupAny"
+            | "groupAll"
+            | "firstOf"
+            | "pairAny"
+            | "adjacentAny"
+            | "adjacentAll"
+            | "anyOf"
+            | "allOf"
+            | "countOf"
+            | "sumOf"
+    ) {
+        return (false, false, true);
+    }
+    let mut left = false;
+    let mut right = false;
+    let mut opaque = false;
+    for arg in operand_args(operand) {
+        let (l, r, o) = expr_scope_usage(arg);
+        left |= l;
+        right |= r;
+        opaque |= o;
+    }
+    (left, right, opaque)
+}
+
+#[derive(Copy, Clone, PartialEq)]
+struct OrdF64(f64);
+
+impl Eq for OrdF64 {}
+
+impl PartialOrd for OrdF64 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for OrdF64 {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
+struct IntervalBound<'a> {
+    left_start: &'a Value,
+    left_end: &'a Value,
+    right_start: &'a Value,
+    right_end: &'a Value,
+    threshold: f64,
+}
+
+fn single_op_args<'a>(expr: &'a Value, expected: &[&str]) -> Option<&'a [Value]> {
+    let object = expr.as_object()?;
+    if object.len() != 1 {
+        return None;
+    }
+    let (op, operand) = object.iter().next()?;
+    if !expected.contains(&op.as_str()) {
+        return None;
+    }
+    operand.as_array().map(Vec::as_slice)
+}
+
+fn split_left_right_pair<'a>(a: &'a Value, b: &'a Value) -> Option<(&'a Value, &'a Value)> {
+    match (expr_scope_usage(a), expr_scope_usage(b)) {
+        ((true, false, false), (false, true, false)) => Some((a, b)),
+        ((false, true, false), (true, false, false)) => Some((b, a)),
+        _ => None,
+    }
+}
+
+fn extract_interval_bound<'a>(cond: &'a Value, env: &EvalEnv<'_>) -> Option<IntervalBound<'a>> {
+    let outer = single_op_args(cond, &["gt", "gte", "atLeast"])?;
+    if outer.len() != 2 || expr_scope_usage(&outer[1]) != (false, false, false) {
+        return None;
+    }
+    let threshold = eval_num(&outer[1], env)?;
+    if !threshold.is_finite() || threshold < 0.0 {
+        return None;
+    }
+    let sub_args = single_op_args(&outer[0], &["sub"])?;
+    if sub_args.len() != 2 {
+        return None;
+    }
+    let min_args = single_op_args(&sub_args[0], &["min"])?;
+    let max_args = single_op_args(&sub_args[1], &["max"])?;
+    if min_args.len() != 2 || max_args.len() != 2 {
+        return None;
+    }
+    let (left_end, right_end) = split_left_right_pair(&min_args[0], &min_args[1])?;
+    let (left_start, right_start) = split_left_right_pair(&max_args[0], &max_args[1])?;
+    Some(IntervalBound {
+        left_start,
+        left_end,
+        right_start,
+        right_end,
+        threshold,
+    })
+}
+
+fn pair_conds_match(
+    pair_conds: &[&Value],
+    left_item: &Value,
+    right_item: &Value,
+    env: &EvalEnv<'_>,
+) -> bool {
+    let pair_env = env.with_pair(left_item, right_item);
+    pair_conds
+        .iter()
+        .all(|cond| expr_truthy(&eval_ref(cond, &pair_env)))
+}
+
+fn try_ancestor_join(
+    left: &[usize],
+    right: &[usize],
+    pair_conds: &[&Value],
+    items: &[Value],
+    env: &EvalEnv<'_>,
+) -> Option<bool> {
+    if env.parents.is_empty() {
+        return None;
+    }
+    let (left_idx_expr, right_idx_expr) = pair_conds.iter().find_map(|cond| {
+        let args = single_op_args(cond, &["ancestor"])?;
+        if args.len() != 2 {
+            return None;
+        }
+        if expr_scope_usage(&args[0]) == (true, false, false)
+            && expr_scope_usage(&args[1]) == (false, true, false)
+        {
+            Some((&args[0], &args[1]))
+        } else {
+            None
+        }
+    })?;
+
+    let mut left_by_node: HashMap<usize, Vec<usize>> = HashMap::with_capacity(left.len());
+    for &i in left {
+        let value = eval_num(left_idx_expr, &env.with_pair(&items[i], &Value::Null))?;
+        if !value.is_finite() || value < 0.0 || value.fract() != 0.0 {
+            return None;
+        }
+        let node = value as usize;
+        if node >= env.parents.len() {
+            return None;
+        }
+        left_by_node.entry(node).or_default().push(i);
+    }
+
+    let mut right_nodes = Vec::with_capacity(right.len());
+    for &j in right {
+        let value = eval_num(right_idx_expr, &env.with_pair(&Value::Null, &items[j]))?;
+        if !value.is_finite() || value < 0.0 || value.fract() != 0.0 {
+            return None;
+        }
+        let node = value as usize;
+        if node >= env.parents.len() {
+            return None;
+        }
+        right_nodes.push((j, node));
+    }
+
+    for (j, start_node) in right_nodes {
+        let mut current = env.parents[start_node];
+        let mut depth = 0usize;
+        while let Some(parent) = current {
+            if let Some(left_candidates) = left_by_node.get(&parent) {
+                let end = left_candidates.partition_point(|&i| i < j);
+                for &i in &left_candidates[..end] {
+                    if pair_conds_match(pair_conds, &items[i], &items[j], env) {
+                        return Some(true);
                     }
                 }
-                "flatMap" => match value {
-                    Value::Array(values) => out.extend(values),
-                    other => out.push(other),
-                },
-                _ => out.push(value),
             }
+            depth += 1;
+            if depth >= env.parents.len() {
+                break;
+            }
+            current = env.parents.get(parent).copied().flatten();
         }
-        return Value::Array(out);
     }
-    if matches!(op.as_str(), "groupAny" | "groupAll") {
-        let Some(items) = operand
-            .as_array()
-            .and_then(|values| values.first())
-            .map(|value| eval_expr(value, element, page, sheet))
-            .and_then(|value| value.as_array().cloned())
-        else {
-            return Value::Bool(false);
-        };
-        let Some(key_expression) = operand.as_array().and_then(|values| values.get(1)) else {
-            return Value::Bool(false);
-        };
-        let Some(predicate) = operand.as_array().and_then(|values| values.get(2)) else {
-            return Value::Bool(false);
-        };
-        let mut groups: Vec<(Value, Vec<Value>)> = Vec::new();
-        for item in items {
-            let key = eval_expr(key_expression, &item, page, sheet);
-            if let Some((_, values)) = groups.iter_mut().find(|(existing, _)| *existing == key) {
-                values.push(item);
-            } else {
-                groups.push((key, vec![item]));
-            }
-        }
-        let total = groups.len();
-        let mut matched = 0usize;
-        for (key, values) in groups {
-            let context = json!({ "key": key, "values": values });
-            if expr_truthy(&eval_expr(predicate, &context, page, sheet)) {
-                matched += 1;
-            }
-        }
-        return Value::Bool(if op == "groupAny" {
-            matched > 0
-        } else {
-            matched == total
-        });
+    Some(false)
+}
+
+fn try_interval_sweep(
+    left: &[usize],
+    right: &[usize],
+    pair_conds: &[&Value],
+    items: &[Value],
+    env: &EvalEnv<'_>,
+) -> Option<bool> {
+    const EPS: f64 = 1e-6;
+    let bounds: Vec<IntervalBound<'_>> = pair_conds
+        .iter()
+        .filter_map(|cond| extract_interval_bound(cond, env))
+        .collect();
+    if bounds.is_empty() {
+        return None;
     }
-    if op == "firstOf" {
-        let Some(items) = operand
-            .as_array()
-            .and_then(|values| values.first())
-            .map(|value| eval_expr(value, element, page, sheet))
-            .and_then(|value| value.as_array().cloned())
-        else {
-            return Value::Null;
-        };
-        let Some(predicate) = operand.as_array().and_then(|values| values.get(1)) else {
-            return Value::Null;
-        };
-        for item in items {
-            if expr_truthy(&eval_expr(predicate, &item, page, sheet)) {
-                return item;
+
+    type SweepIntervals = Vec<(usize, f64, f64)>;
+    let mut best_axis: Option<(f64, SweepIntervals, SweepIntervals)> = None;
+    for bound in &bounds {
+        let mut l_intervals = Vec::with_capacity(left.len());
+        let mut r_intervals = Vec::with_capacity(right.len());
+        let mut min_start = f64::INFINITY;
+        let mut max_end = f64::NEG_INFINITY;
+        let mut sum_len = 0.0;
+
+        for &i in left {
+            let l_env = env.with_pair(&items[i], &Value::Null);
+            let s = eval_num(bound.left_start, &l_env)?;
+            let e = eval_num(bound.left_end, &l_env)?;
+            if !s.is_finite() || !e.is_finite() {
+                return None;
+            }
+            let trim_end = e - bound.threshold + EPS;
+            if trim_end >= s {
+                min_start = min_start.min(s);
+                max_end = max_end.max(trim_end);
+                sum_len += trim_end - s;
+                l_intervals.push((i, s, trim_end));
             }
         }
-        return Value::Null;
+        if l_intervals.is_empty() {
+            return Some(false);
+        }
+
+        for &j in right {
+            let r_env = env.with_pair(&Value::Null, &items[j]);
+            let s = eval_num(bound.right_start, &r_env)?;
+            let e = eval_num(bound.right_end, &r_env)?;
+            if !s.is_finite() || !e.is_finite() {
+                return None;
+            }
+            let trim_end = e - bound.threshold + EPS;
+            if trim_end >= s {
+                min_start = min_start.min(s);
+                max_end = max_end.max(trim_end);
+                sum_len += trim_end - s;
+                r_intervals.push((j, s, trim_end));
+            }
+        }
+        if r_intervals.is_empty() {
+            return Some(false);
+        }
+
+        let span = (max_end - min_start).max(1.0);
+        let density = sum_len / span;
+        if best_axis
+            .as_ref()
+            .map(|(best_d, _, _)| density < *best_d)
+            .unwrap_or(true)
+        {
+            best_axis = Some((density, l_intervals, r_intervals));
+        }
     }
-    if op == "pairAny" {
-        let Some(items) = operand
-            .as_array()
-            .and_then(|values| values.first())
-            .map(|value| eval_expr(value, element, page, sheet))
-            .and_then(|value| value.as_array().cloned())
-        else {
-            return Value::Bool(false);
-        };
-        let Some(predicate) = operand.as_array().and_then(|values| values.get(1)) else {
-            return Value::Bool(false);
-        };
-        for left in 0..items.len() {
-            for right in left + 1..items.len() {
-                let context = json!({ "left": items[left], "right": items[right] });
-                if expr_truthy(&eval_expr(predicate, &context, page, sheet)) {
-                    return Value::Bool(true);
+
+    let (_, mut l_intervals, mut r_intervals) = best_axis?;
+    l_intervals.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    r_intervals.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+
+    struct ActivePool {
+        items: Vec<usize>,
+        pos: Vec<usize>,
+        heap: BinaryHeap<Reverse<(OrdF64, usize)>>,
+    }
+
+    impl ActivePool {
+        fn with_capacity(count: usize) -> Self {
+            Self {
+                items: Vec::new(),
+                pos: vec![usize::MAX; count],
+                heap: BinaryHeap::new(),
+            }
+        }
+
+        fn evict_before(&mut self, start: f64) {
+            while let Some(&Reverse((end, slot))) = self.heap.peek() {
+                if end.0 < start {
+                    self.heap.pop();
+                    let p = self.pos[slot];
+                    if p != usize::MAX {
+                        let last = self.items.pop().expect("non-empty active pool");
+                        if p < self.items.len() {
+                            self.items[p] = last;
+                            self.pos[last] = p;
+                        }
+                        self.pos[slot] = usize::MAX;
+                    }
+                } else {
+                    break;
                 }
             }
         }
-        return Value::Bool(false);
-    }
-    if matches!(op.as_str(), "adjacentAny" | "adjacentAll") {
-        let Some(items) = operand
-            .as_array()
-            .and_then(|values| values.first())
-            .map(|value| eval_expr(value, element, page, sheet))
-            .and_then(|value| value.as_array().cloned())
-        else {
-            return Value::Null;
-        };
-        let Some(predicate) = operand.as_array().and_then(|values| values.get(1)) else {
-            return Value::Null;
-        };
-        let total = items.len().saturating_sub(1);
-        let mut matched = 0usize;
-        for pair in items.windows(2) {
-            let context = json!({ "left": pair[0], "right": pair[1] });
-            if expr_truthy(&eval_expr(predicate, &context, page, sheet)) {
-                matched += 1;
-            }
+
+        fn insert(&mut self, slot: usize, end: f64) {
+            self.pos[slot] = self.items.len();
+            self.items.push(slot);
+            self.heap.push(Reverse((OrdF64(end), slot)));
         }
-        return Value::Bool(if op == "adjacentAny" {
-            matched > 0
+    }
+
+    let mut active_left = ActivePool::with_capacity(l_intervals.len());
+    let mut active_right = ActivePool::with_capacity(r_intervals.len());
+    let mut li = 0usize;
+    let mut ri = 0usize;
+
+    while li < l_intervals.len() || ri < r_intervals.len() {
+        let take_left = match (l_intervals.get(li), r_intervals.get(ri)) {
+            (Some(l), Some(r)) => l.1.total_cmp(&r.1) != std::cmp::Ordering::Greater,
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => break,
+        };
+        if take_left {
+            let (i, start, end) = l_intervals[li];
+            active_left.evict_before(start);
+            active_right.evict_before(start);
+            for &r_slot in &active_right.items {
+                let j = r_intervals[r_slot].0;
+                if i < j && pair_conds_match(pair_conds, &items[i], &items[j], env) {
+                    return Some(true);
+                }
+            }
+            active_left.insert(li, end);
+            li += 1;
         } else {
-            matched == total
-        });
-    }
-    if matches!(op.as_str(), "anyOf" | "allOf" | "countOf" | "sumOf") {
-        let Some(items) = operand
-            .as_array()
-            .and_then(|values| values.first())
-            .map(|value| eval_expr(value, element, page, sheet))
-            .and_then(|value| value.as_array().cloned())
-        else {
-            return Value::Null;
-        };
-        let Some(predicate) = operand.as_array().and_then(|values| values.get(1)) else {
-            return Value::Null;
-        };
-        let total = items.len();
-        let mut matched = 0usize;
-        let mut sum = 0.0;
-        for item in items {
-            let value = eval_expr(predicate, &item, page, sheet);
-            if expr_truthy(&value) {
-                matched += 1;
+            let (j, start, end) = r_intervals[ri];
+            active_left.evict_before(start);
+            active_right.evict_before(start);
+            for &l_slot in &active_left.items {
+                let i = l_intervals[l_slot].0;
+                if i < j && pair_conds_match(pair_conds, &items[i], &items[j], env) {
+                    return Some(true);
+                }
             }
-            if op == "sumOf" {
-                sum += expr_number(&value).unwrap_or(0.0);
+            active_right.insert(ri, end);
+            ri += 1;
+        }
+    }
+    Some(false)
+}
+
+fn scan_pair_candidates(
+    left: &[usize],
+    right: &[usize],
+    pair_conds: &[&Value],
+    items: &[Value],
+    env: &EvalEnv<'_>,
+) -> bool {
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    if left.len().saturating_mul(right.len()) > 64 {
+        if let Some(found) = try_ancestor_join(left, right, pair_conds, items, env) {
+            return found;
+        }
+        if let Some(found) = try_interval_sweep(left, right, pair_conds, items, env) {
+            return found;
+        }
+    }
+    for &i in left {
+        let start = right.partition_point(|&j| j <= i);
+        for &j in &right[start..] {
+            if pair_conds_match(pair_conds, &items[i], &items[j], env) {
+                return true;
             }
         }
-        return match op.as_str() {
-            "anyOf" => Value::Bool(matched > 0),
-            "allOf" => Value::Bool(matched == total),
-            "countOf" => json!(matched),
-            _ => json!(sum),
-        };
     }
-    let values: Vec<Value> = match operand {
-        Value::Array(values) => values
-            .iter()
-            .map(|value| eval_expr(value, element, page, sheet))
-            .collect(),
-        other => vec![eval_expr(other, element, page, sheet)],
+    false
+}
+
+fn eval_pair_any(items_expr: &Value, predicate: &Value, env: &EvalEnv<'_>) -> bool {
+    let list_val = eval_ref(items_expr, env);
+    let items = list_val.as_array().map(Vec::as_slice).unwrap_or(&[]);
+    if items.len() < 2 {
+        return false;
+    }
+
+    let mut conjuncts = Vec::new();
+    collect_all_conjuncts(predicate, &mut conjuncts);
+    if conjuncts.is_empty() {
+        return true;
+    }
+
+    let mut const_conds = Vec::new();
+    let mut left_conds = Vec::new();
+    let mut right_conds = Vec::new();
+    let mut pair_conds = Vec::new();
+    for cond in conjuncts {
+        match expr_scope_usage(cond) {
+            (false, false, false) => const_conds.push(cond),
+            (true, false, false) => left_conds.push(cond),
+            (false, true, false) => right_conds.push(cond),
+            _ => pair_conds.push(cond),
+        }
+    }
+
+    for cond in const_conds {
+        if !expr_truthy(&eval_ref(cond, env)) {
+            return false;
+        }
+    }
+
+    let left_indices: Vec<usize> = (0..items.len())
+        .filter(|&i| {
+            let pair_env = env.with_pair(&items[i], &Value::Null);
+            left_conds
+                .iter()
+                .all(|cond| expr_truthy(&eval_ref(cond, &pair_env)))
+        })
+        .collect();
+    if left_indices.is_empty() {
+        return false;
+    }
+
+    let right_indices: Vec<usize> = (0..items.len())
+        .filter(|&j| {
+            let pair_env = env.with_pair(&Value::Null, &items[j]);
+            right_conds
+                .iter()
+                .all(|cond| expr_truthy(&eval_ref(cond, &pair_env)))
+        })
+        .collect();
+    if right_indices.is_empty() {
+        return false;
+    }
+
+    let join_keys = pair_conds.iter().find_map(|cond| {
+        let args = single_op_args(cond, &["equals", "eq"])?;
+        if args.len() != 2 {
+            return None;
+        }
+        split_left_right_pair(&args[0], &args[1])
+    });
+
+    if let Some((left_key_expr, right_key_expr)) = join_keys {
+        let mut right_buckets: HashMap<JoinBucket, Vec<usize>> = HashMap::new();
+        let mut all_right_bucketed = true;
+        for &j in &right_indices {
+            let value = eval_ref(right_key_expr, &env.with_pair(&Value::Null, &items[j]));
+            let bucket = join_bucket(&value);
+            if matches!(bucket, JoinBucket::Fallback) {
+                all_right_bucketed = false;
+                break;
+            }
+            right_buckets.entry(bucket).or_default().push(j);
+        }
+        if all_right_bucketed {
+            let mut left_buckets: HashMap<JoinBucket, Vec<usize>> = HashMap::new();
+            let mut fallback_left: Vec<usize> = Vec::new();
+            for &i in &left_indices {
+                let left_val = eval_ref(left_key_expr, &env.with_pair(&items[i], &Value::Null));
+                match join_bucket(&left_val) {
+                    JoinBucket::Fallback => fallback_left.push(i),
+                    key => left_buckets.entry(key).or_default().push(i),
+                }
+            }
+            if !fallback_left.is_empty()
+                && scan_pair_candidates(&fallback_left, &right_indices, &pair_conds, items, env)
+            {
+                return true;
+            }
+            for (bucket, left_group) in left_buckets {
+                match bucket {
+                    JoinBucket::NumBin(bin) => {
+                        for probe in [bin - 1, bin, bin + 1] {
+                            if let Some(right_slice) = right_buckets.get(&JoinBucket::NumBin(probe))
+                            {
+                                if scan_pair_candidates(
+                                    &left_group,
+                                    right_slice,
+                                    &pair_conds,
+                                    items,
+                                    env,
+                                ) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    JoinBucket::Fallback => unreachable!(),
+                    key => {
+                        if let Some(right_slice) = right_buckets.get(&key) {
+                            if scan_pair_candidates(
+                                &left_group,
+                                right_slice,
+                                &pair_conds,
+                                items,
+                                env,
+                            ) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    scan_pair_candidates(&left_indices, &right_indices, &pair_conds, items, env)
+}
+
+fn eval_ancestor(left_id: f64, right_id: f64, env: &EvalEnv<'_>) -> bool {
+    if !left_id.is_finite() || !right_id.is_finite() || left_id < 0.0 || right_id < 0.0 {
+        return false;
+    }
+    let target = left_id as u64;
+    let start = right_id as usize;
+    if !env.parents.is_empty() {
+        let mut current = env.parents.get(start).copied().flatten();
+        while let Some(parent) = current {
+            if parent as u64 == target {
+                return true;
+            }
+            current = env.parents.get(parent).copied().flatten();
+        }
+        return false;
+    }
+    let Some(elements) = env.page["elements"].as_array() else {
+        return false;
     };
+    let mut current = elements
+        .get(start)
+        .and_then(|element| element["parentIndex"].as_u64());
+    while let Some(parent) = current {
+        if parent == target {
+            return true;
+        }
+        current = elements
+            .get(parent as usize)
+            .and_then(|element| element["parentIndex"].as_u64());
+    }
+    false
+}
+
+fn eval_num(expr: &Value, env: &EvalEnv<'_>) -> Option<f64> {
+    match expr {
+        Value::Number(number) => number.as_f64(),
+        Value::String(raw) => raw
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .or_else(|| parse_dimension(raw).map(|(number, _)| number)),
+        Value::Bool(value) => Some(if *value { 1.0 } else { 0.0 }),
+        Value::Object(object) => {
+            if let Some(path) = object.get("field").and_then(Value::as_str) {
+                return expr_number(&expr_field_cow(path, env));
+            }
+            if object.len() != 1 {
+                return None;
+            }
+            let (op, operand) = object.iter().next().unwrap();
+            let args = operand_args(operand);
+            match op.as_str() {
+                "add" => Some(args.iter().filter_map(|arg| eval_num(arg, env)).sum()),
+                "sub" => Some(
+                    args.first()
+                        .and_then(|arg| eval_num(arg, env))
+                        .unwrap_or(0.0)
+                        - args
+                            .get(1)
+                            .and_then(|arg| eval_num(arg, env))
+                            .unwrap_or(0.0),
+                ),
+                "mul" => Some(args.iter().filter_map(|arg| eval_num(arg, env)).product()),
+                "div" => {
+                    let denominator = args
+                        .get(1)
+                        .and_then(|arg| eval_num(arg, env))
+                        .unwrap_or(1.0);
+                    Some(
+                        args.first()
+                            .and_then(|arg| eval_num(arg, env))
+                            .unwrap_or(0.0)
+                            / denominator,
+                    )
+                }
+                "min" | "max" if matches!(operand, Value::Array(list) if list.len() > 1) => {
+                    let is_min = op == "min";
+                    let mut acc = if is_min {
+                        f64::INFINITY
+                    } else {
+                        f64::NEG_INFINITY
+                    };
+                    for arg in args {
+                        if let Some(number) = eval_num(arg, env) {
+                            acc = if is_min {
+                                acc.min(number)
+                            } else {
+                                acc.max(number)
+                            };
+                        }
+                    }
+                    Some(if acc.is_finite() { acc } else { 0.0 })
+                }
+                "round" => args
+                    .first()
+                    .and_then(|arg| eval_num(arg, env))
+                    .map(f64::round),
+                _ => expr_number(&eval_ref(expr, env)),
+            }
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+fn eval_expr(expr: &Value, element: &Value, page: &Value, sheet: &str) -> Value {
+    let env = EvalEnv::for_root(element, page, sheet, &page["ruleParams"], &[]);
+    eval_ref(expr, &env).into_owned()
+}
+
+fn eval_ref<'a>(expr: &'a Value, env: &EvalEnv<'a>) -> Cow<'a, Value> {
+    let Some(object) = expr.as_object() else {
+        return Cow::Borrowed(expr);
+    };
+    if let Some(path) = object.get("field").and_then(Value::as_str) {
+        return expr_field_cow(path, env);
+    }
+    if object.len() != 1 {
+        return Cow::Owned(Value::Null);
+    }
+    let (op, operand) = object.iter().next().unwrap();
+    let args = operand_args(operand);
     match op.as_str() {
-        "all" | "and" => Value::Bool(values.iter().all(expr_truthy)),
-        "any" | "or" => Value::Bool(values.iter().any(expr_truthy)),
-        "not" => Value::Bool(!values.first().map(expr_truthy).unwrap_or(false)),
-        "if" => {
-            if values.first().map(expr_truthy).unwrap_or(false) {
-                values.get(1).cloned().unwrap_or(Value::Null)
+        "map" | "flatMap" | "filter" => {
+            let Some(items_expr) = args.first() else {
+                return Cow::Owned(Value::Array(Vec::new()));
+            };
+            let Some(predicate) = args.get(1) else {
+                return Cow::Owned(Value::Array(Vec::new()));
+            };
+            let list_val = eval_ref(items_expr, env);
+            let items = list_val.as_array().map(Vec::as_slice).unwrap_or(&[]);
+            let mut out = Vec::new();
+            for item in items {
+                let value = eval_ref(predicate, &env.with_element(item));
+                match op.as_str() {
+                    "filter" => {
+                        if expr_truthy(&value) {
+                            out.push(item.clone());
+                        }
+                    }
+                    "flatMap" => match value.into_owned() {
+                        Value::Array(values) => out.extend(values),
+                        other => out.push(other),
+                    },
+                    _ => out.push(value.into_owned()),
+                }
+            }
+            Cow::Owned(Value::Array(out))
+        }
+        "groupAny" | "groupAll" => {
+            let (Some(items_expr), Some(key_expression), Some(predicate)) =
+                (args.first(), args.get(1), args.get(2))
+            else {
+                return Cow::Owned(Value::Bool(false));
+            };
+            let list_val = eval_ref(items_expr, env);
+            let items = list_val.as_array().map(Vec::as_slice).unwrap_or(&[]);
+            let mut groups: Vec<(Value, Vec<Value>)> = Vec::new();
+            let mut key_index: HashMap<ExactKey, usize> = HashMap::new();
+            for item in items {
+                let key = eval_ref(key_expression, &env.with_element(item));
+                let exact = exact_key(&key);
+                if let Some(&idx) = key_index.get(&exact) {
+                    groups[idx].1.push(item.clone());
+                } else {
+                    let idx = groups.len();
+                    key_index.insert(exact, idx);
+                    groups.push((key.into_owned(), vec![item.clone()]));
+                }
+            }
+            let total = groups.len();
+            let is_any = op == "groupAny";
+            let mut matched = 0usize;
+            for (key, values) in groups {
+                let values_array = Value::Array(values);
+                let ok = expr_truthy(&eval_ref(predicate, &env.with_group(&key, &values_array)));
+                if is_any && ok {
+                    return Cow::Owned(Value::Bool(true));
+                }
+                if !is_any && !ok {
+                    return Cow::Owned(Value::Bool(false));
+                }
+                if ok {
+                    matched += 1;
+                }
+            }
+            Cow::Owned(Value::Bool(if is_any {
+                matched > 0
             } else {
-                values.get(2).cloned().unwrap_or(Value::Null)
+                matched == total
+            }))
+        }
+        "firstOf" => {
+            let (Some(items_expr), Some(predicate)) = (args.first(), args.get(1)) else {
+                return Cow::Owned(Value::Null);
+            };
+            let list_val = eval_ref(items_expr, env);
+            let items = list_val.as_array().map(Vec::as_slice).unwrap_or(&[]);
+            for item in items {
+                if expr_truthy(&eval_ref(predicate, &env.with_element(item))) {
+                    return Cow::Owned(item.clone());
+                }
+            }
+            Cow::Owned(Value::Null)
+        }
+        "pairAny" => {
+            let (Some(items_expr), Some(predicate)) = (args.first(), args.get(1)) else {
+                return Cow::Owned(Value::Bool(false));
+            };
+            Cow::Owned(Value::Bool(eval_pair_any(items_expr, predicate, env)))
+        }
+        "adjacentAny" | "adjacentAll" => {
+            let (Some(items_expr), Some(predicate)) = (args.first(), args.get(1)) else {
+                return Cow::Owned(Value::Null);
+            };
+            let list_val = eval_ref(items_expr, env);
+            let items = list_val.as_array().map(Vec::as_slice).unwrap_or(&[]);
+            let is_any = op == "adjacentAny";
+            for pair in items.windows(2) {
+                let ok = expr_truthy(&eval_ref(predicate, &env.with_pair(&pair[0], &pair[1])));
+                if is_any && ok {
+                    return Cow::Owned(Value::Bool(true));
+                }
+                if !is_any && !ok {
+                    return Cow::Owned(Value::Bool(false));
+                }
+            }
+            Cow::Owned(Value::Bool(!is_any))
+        }
+        "anyOf" | "allOf" | "countOf" | "sumOf" => {
+            let (Some(items_expr), Some(predicate)) = (args.first(), args.get(1)) else {
+                return Cow::Owned(Value::Null);
+            };
+            let list_val = eval_ref(items_expr, env);
+            let items = list_val.as_array().map(Vec::as_slice).unwrap_or(&[]);
+            let mut matched = 0usize;
+            let mut sum = 0.0;
+            for item in items {
+                let value = eval_ref(predicate, &env.with_element(item));
+                let truthy = expr_truthy(&value);
+                match op.as_str() {
+                    "anyOf" if truthy => return Cow::Owned(Value::Bool(true)),
+                    "allOf" if !truthy => return Cow::Owned(Value::Bool(false)),
+                    "sumOf" => sum += expr_number(&value).unwrap_or(0.0),
+                    _ if truthy => matched += 1,
+                    _ => {}
+                }
+            }
+            Cow::Owned(match op.as_str() {
+                "anyOf" => Value::Bool(false),
+                "allOf" => Value::Bool(true),
+                "countOf" => json!(matched),
+                _ => json!(sum),
+            })
+        }
+        "all" | "and" => Cow::Owned(Value::Bool(
+            args.iter().all(|arg| expr_truthy(&eval_ref(arg, env))),
+        )),
+        "any" | "or" => Cow::Owned(Value::Bool(
+            args.iter().any(|arg| expr_truthy(&eval_ref(arg, env))),
+        )),
+        "not" => Cow::Owned(Value::Bool(
+            !args
+                .first()
+                .map(|arg| expr_truthy(&eval_ref(arg, env)))
+                .unwrap_or(false),
+        )),
+        "if" => {
+            let cond = args
+                .first()
+                .map(|arg| expr_truthy(&eval_ref(arg, env)))
+                .unwrap_or(false);
+            let branch = if cond { args.get(1) } else { args.get(2) };
+            match branch {
+                Some(expr) => eval_ref(expr, env),
+                None => Cow::Owned(Value::Null),
             }
         }
         "get" => {
-            let Some(path) = values.get(1).map(expr_text) else {
-                return Value::Null;
+            let (Some(target_expr), Some(path_expr)) = (args.first(), args.get(1)) else {
+                return Cow::Owned(Value::Null);
             };
-            values
-                .first()
-                .map(|value| expr_path(value, &path).clone())
-                .unwrap_or(Value::Null)
+            let path = expr_text_cow(&eval_ref(path_expr, env)).into_owned();
+            match eval_ref(target_expr, env) {
+                Cow::Borrowed(value) => Cow::Borrowed(expr_path(value, &path)),
+                Cow::Owned(value) => Cow::Owned(expr_path(&value, &path).clone()),
+            }
         }
         "ancestor" => {
-            let mut found = false;
-            if let (Some(left), Some(right)) = (
-                values.first().and_then(expr_number),
-                values.get(1).and_then(expr_number),
-            ) {
-                let elements = page["elements"].as_array().cloned().unwrap_or_default();
-                let mut current = elements
-                    .get(right as usize)
-                    .and_then(|element| element["parentIndex"].as_u64());
-                while let Some(parent) = current {
-                    if parent == left as u64 {
-                        found = true;
-                        break;
-                    }
-                    current = elements
-                        .get(parent as usize)
-                        .and_then(|element| element["parentIndex"].as_u64());
+            let found = if let (Some(arg0), Some(arg1)) = (args.first(), args.get(1)) {
+                if let (Some(left), Some(right)) = (eval_num(arg0, env), eval_num(arg1, env)) {
+                    eval_ancestor(left, right, env)
+                } else {
+                    false
                 }
-            }
-            Value::Bool(found)
+            } else {
+                false
+            };
+            Cow::Owned(Value::Bool(found))
         }
         "param" => {
-            let key = values.first().map(expr_text).unwrap_or_default();
-            page["ruleParams"].get(&key).cloned().unwrap_or(Value::Null)
-        }
-        "contrast" => crate::contrast_ratio(element)
-            .map(|value| json!(value))
-            .unwrap_or(Value::Null),
-        "shadowInset" => Value::Bool(
-            values
+            let key = args
                 .first()
-                .and_then(expr_shadow)
+                .map(|arg| expr_text_cow(&eval_ref(arg, env)).into_owned())
+                .unwrap_or_default();
+            Cow::Borrowed(env.rule_params.get(&key).unwrap_or(&Value::Null))
+        }
+        "contrast" => Cow::Owned(
+            crate::contrast_ratio(env.element)
+                .map(|value| json!(value))
+                .unwrap_or(Value::Null),
+        ),
+        "shadowInset" => Cow::Owned(Value::Bool(
+            args.first()
+                .and_then(|arg| expr_shadow(&eval_ref(arg, env)))
                 .map(|shadow| shadow.5)
                 .unwrap_or(false),
-        ),
-        "shadowBlur" => json!(values
+        )),
+        "shadowBlur" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_shadow)
+            .and_then(|arg| expr_shadow(&eval_ref(arg, env)))
             .map(|shadow| shadow.2)
-            .unwrap_or(0.0)),
-        "shadowOffset" => json!(values
+            .unwrap_or(0.0))),
+        "shadowOffset" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_shadow)
+            .and_then(|arg| expr_shadow(&eval_ref(arg, env)))
             .map(|shadow| (shadow.0 * shadow.0 + shadow.1 * shadow.1).sqrt())
-            .unwrap_or(0.0)),
-        "shadowAlpha" => json!(values
+            .unwrap_or(0.0))),
+        "shadowAlpha" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_shadow)
+            .and_then(|arg| expr_shadow(&eval_ref(arg, env)))
             .map(|shadow| shadow.4 .3)
-            .unwrap_or(0.0)),
-        "shadowChromatic" => Value::Bool(
-            values
-                .first()
-                .and_then(expr_shadow)
+            .unwrap_or(0.0))),
+        "shadowChromatic" => Cow::Owned(Value::Bool(
+            args.first()
+                .and_then(|arg| expr_shadow(&eval_ref(arg, env)))
                 .map(|shadow| expr_chroma(shadow.4) > 25.0 && shadow.4 .3 > 0.2)
                 .unwrap_or(false),
-        ),
-        "alpha" => json!(values
+        )),
+        "alpha" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_color)
+            .and_then(|arg| expr_color(&eval_ref(arg, env)))
             .map(|value| value.3)
-            .unwrap_or(0.0)),
-        "chroma" => json!(values
+            .unwrap_or(0.0))),
+        "chroma" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_color)
+            .and_then(|arg| expr_color(&eval_ref(arg, env)))
             .map(expr_chroma)
-            .unwrap_or(0.0)),
-        "hue" => json!(values
+            .unwrap_or(0.0))),
+        "hue" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_color)
+            .and_then(|arg| expr_color(&eval_ref(arg, env)))
             .map(expr_hue)
-            .unwrap_or(0.0)),
-        "luminance" => json!(values
+            .unwrap_or(0.0))),
+        "luminance" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_color)
+            .and_then(|arg| expr_color(&eval_ref(arg, env)))
             .map(|value| crate::luminance(value.0, value.1, value.2))
-            .unwrap_or(0.0)),
-        "chromatic" => Value::Bool(
-            values
-                .first()
-                .map(expr_colors)
+            .unwrap_or(0.0))),
+        "chromatic" => Cow::Owned(Value::Bool(
+            args.first()
+                .map(|arg| expr_colors(&eval_ref(arg, env)))
                 .unwrap_or_default()
                 .iter()
                 .any(|value| expr_chroma(*value) > 25.0 && value.3 > 0.2),
-        ),
-        "dark" => Value::Bool(
-            values
-                .first()
-                .and_then(expr_color)
+        )),
+        "dark" => Cow::Owned(Value::Bool(
+            args.first()
+                .and_then(|arg| expr_color(&eval_ref(arg, env)))
                 .map(|value| crate::luminance(value.0, value.1, value.2) < 0.35)
                 .unwrap_or(false),
-        ),
-        "red" | "r" => json!(values
+        )),
+        "red" | "r" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_color)
+            .and_then(|arg| expr_color(&eval_ref(arg, env)))
             .map(|value| value.0)
-            .unwrap_or(0.0)),
-        "green" | "g" => json!(values
+            .unwrap_or(0.0))),
+        "green" | "g" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_color)
+            .and_then(|arg| expr_color(&eval_ref(arg, env)))
             .map(|value| value.1)
-            .unwrap_or(0.0)),
-        "blue" | "b" => json!(values
+            .unwrap_or(0.0))),
+        "blue" | "b" => Cow::Owned(json!(args
             .first()
-            .and_then(expr_color)
+            .and_then(|arg| expr_color(&eval_ref(arg, env)))
             .map(|value| value.2)
-            .unwrap_or(0.0)),
-        "gt" => Value::Bool(
-            values.len() >= 2
-                && expr_number(&values[0]).unwrap_or(0.0) > expr_number(&values[1]).unwrap_or(0.0),
-        ),
-        "gte" | "atLeast" => Value::Bool(
-            values.len() >= 2
-                && expr_number(&values[0]).unwrap_or(0.0) >= expr_number(&values[1]).unwrap_or(0.0),
-        ),
-        "lt" => Value::Bool(
-            values.len() >= 2
-                && expr_number(&values[0]).unwrap_or(0.0) < expr_number(&values[1]).unwrap_or(0.0),
-        ),
-        "lte" | "atMost" => Value::Bool(
-            values.len() >= 2
-                && expr_number(&values[0]).unwrap_or(0.0) <= expr_number(&values[1]).unwrap_or(0.0),
-        ),
-        "equals" | "eq" => Value::Bool(values.len() >= 2 && expr_equal(&values[0], &values[1])),
-        "notEquals" | "ne" => Value::Bool(values.len() >= 2 && !expr_equal(&values[0], &values[1])),
+            .unwrap_or(0.0))),
+        "gt" => Cow::Owned(Value::Bool(
+            args.len() >= 2
+                && eval_num(&args[0], env).unwrap_or(0.0) > eval_num(&args[1], env).unwrap_or(0.0),
+        )),
+        "gte" | "atLeast" => Cow::Owned(Value::Bool(
+            args.len() >= 2
+                && eval_num(&args[0], env).unwrap_or(0.0) >= eval_num(&args[1], env).unwrap_or(0.0),
+        )),
+        "lt" => Cow::Owned(Value::Bool(
+            args.len() >= 2
+                && eval_num(&args[0], env).unwrap_or(0.0) < eval_num(&args[1], env).unwrap_or(0.0),
+        )),
+        "lte" | "atMost" => Cow::Owned(Value::Bool(
+            args.len() >= 2
+                && eval_num(&args[0], env).unwrap_or(0.0) <= eval_num(&args[1], env).unwrap_or(0.0),
+        )),
+        "equals" | "eq" => Cow::Owned(Value::Bool(
+            args.len() >= 2 && expr_equal(&eval_ref(&args[0], env), &eval_ref(&args[1], env)),
+        )),
+        "notEquals" | "ne" => Cow::Owned(Value::Bool(
+            args.len() >= 2 && !expr_equal(&eval_ref(&args[0], env), &eval_ref(&args[1], env)),
+        )),
         "contains" => {
-            Value::Bool(values.len() >= 2 && expr_text(&values[0]).contains(&expr_text(&values[1])))
+            let matched = if args.len() >= 2 {
+                let haystack = eval_ref(&args[0], env);
+                let needle = eval_ref(&args[1], env);
+                expr_text_cow(&haystack).contains(expr_text_cow(&needle).as_ref())
+            } else {
+                false
+            };
+            Cow::Owned(Value::Bool(matched))
         }
         "matches" => {
-            let text = values.first().map(expr_text).unwrap_or_default();
-            let pattern = values.get(1).map(expr_text).unwrap_or_default();
-            Value::Bool(
-                Regex::new(&pattern)
-                    .map(|regex| regex.is_match(&text))
-                    .unwrap_or(false),
-            )
+            let matched = if let (Some(arg0), Some(arg1)) = (args.first(), args.get(1)) {
+                let text_val = eval_ref(arg0, env);
+                let pat_val = eval_ref(arg1, env);
+                let text = expr_text_cow(&text_val);
+                let pattern = expr_text_cow(&pat_val);
+                cached_regex_with(&pattern, |regex| regex.is_match(&text)).unwrap_or(false)
+            } else {
+                false
+            };
+            Cow::Owned(Value::Bool(matched))
         }
         "countMatches" | "count_matches" => {
-            let text = values.first().map(expr_text).unwrap_or_default();
-            let pattern = values.get(1).map(expr_text).unwrap_or_default();
-            json!(Regex::new(&pattern)
-                .map(|regex| regex.find_iter(&text).count())
-                .unwrap_or(0))
+            let count = if let (Some(arg0), Some(arg1)) = (args.first(), args.get(1)) {
+                let text_val = eval_ref(arg0, env);
+                let pat_val = eval_ref(arg1, env);
+                let text = expr_text_cow(&text_val);
+                let pattern = expr_text_cow(&pat_val);
+                cached_regex_with(&pattern, |regex| regex.find_iter(&text).count()).unwrap_or(0)
+            } else {
+                0
+            };
+            Cow::Owned(json!(count))
         }
-        "in" => Value::Bool(
-            values.len() >= 2
-                && values[1]
-                    .as_array()
-                    .map(|list| list.iter().any(|item| expr_equal(&values[0], item)))
-                    .unwrap_or(false),
-        ),
-        "number" | "numeric" => Value::Bool(values.first().and_then(expr_number).is_some()),
-        "headingLevel" => json!(values
-            .first()
-            .map(expr_text)
-            .unwrap_or_default()
-            .trim_start_matches('h')
-            .parse::<u32>()
-            .unwrap_or(0)),
-        "between" => Value::Bool(
-            values.len() >= 3
-                && expr_number(&values[0])
-                    .map(|value| {
-                        value >= expr_number(&values[1]).unwrap_or(value)
-                            && value <= expr_number(&values[2]).unwrap_or(value)
-                    })
-                    .unwrap_or(false),
-        ),
-        "length" => Value::Number(
-            values
+        "in" => {
+            let matched = if args.len() >= 2 {
+                let target = eval_ref(&args[0], env);
+                let list = eval_ref(&args[1], env);
+                list.as_array()
+                    .map(|items| items.iter().any(|item| expr_equal(&target, item)))
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+            Cow::Owned(Value::Bool(matched))
+        }
+        "number" | "numeric" => Cow::Owned(Value::Bool(
+            args.first().and_then(|arg| eval_num(arg, env)).is_some(),
+        )),
+        "headingLevel" => {
+            let text_val = args
                 .first()
-                .map(|value| match value {
+                .map(|arg| eval_ref(arg, env))
+                .unwrap_or(Cow::Borrowed(&Value::Null));
+            Cow::Owned(json!(expr_text_cow(&text_val)
+                .trim_start_matches('h')
+                .parse::<u32>()
+                .unwrap_or(0)))
+        }
+        "between" => {
+            let matched = if args.len() >= 3 {
+                eval_num(&args[0], env)
+                    .map(|value| {
+                        let min = eval_num(&args[1], env).unwrap_or(value);
+                        let max = eval_num(&args[2], env).unwrap_or(value);
+                        value >= min && value <= max
+                    })
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+            Cow::Owned(Value::Bool(matched))
+        }
+        "length" => {
+            let len = args
+                .first()
+                .map(|arg| match eval_ref(arg, env).as_ref() {
+                    Value::Null => 0,
                     Value::String(value) => value.chars().count(),
                     Value::Array(values) => values.len(),
                     other => other.to_string().chars().count(),
                 })
-                .unwrap_or(0)
-                .into(),
-        ),
+                .unwrap_or(0);
+            Cow::Owned(Value::Number(len.into()))
+        }
         "concat" => {
             let mut out = Vec::new();
-            for value in values {
-                match value {
+            for arg in args {
+                match eval_ref(arg, env).into_owned() {
                     Value::Array(items) => out.extend(items),
                     other => out.push(other),
                 }
             }
-            Value::Array(out)
+            Cow::Owned(Value::Array(out))
         }
         "unique" => {
             let mut out = Vec::new();
-            if let Some(Value::Array(items)) = values.first() {
-                for item in items {
-                    if !out.contains(item) {
-                        out.push(item.clone());
+            let mut seen = HashSet::new();
+            if let Some(arg0) = args.first() {
+                if let Some(items) = eval_ref(arg0, env).as_array() {
+                    for item in items {
+                        if seen.insert(exact_key(item)) {
+                            out.push(item.clone());
+                        }
                     }
                 }
             }
-            Value::Array(out)
+            Cow::Owned(Value::Array(out))
         }
         "sortNumbers" => {
-            let mut out = values
+            let mut out = args
                 .first()
-                .and_then(Value::as_array)
-                .cloned()
+                .and_then(|arg| eval_ref(arg, env).as_array().cloned())
                 .unwrap_or_default();
             out.sort_by(|left, right| {
                 expr_number(left)
@@ -2697,15 +3686,21 @@ fn eval_expr(expr: &Value, element: &Value, page: &Value, sheet: &str) -> Value 
                     .partial_cmp(&expr_number(right).unwrap_or(0.0))
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            Value::Array(out)
+            Cow::Owned(Value::Array(out))
         }
-        "lower" => json!(values
-            .first()
-            .map(expr_text)
-            .unwrap_or_default()
-            .to_lowercase()),
+        "lower" => {
+            let text_val = args
+                .first()
+                .map(|arg| eval_ref(arg, env))
+                .unwrap_or(Cow::Borrowed(&Value::Null));
+            Cow::Owned(json!(expr_text_cow(&text_val).to_lowercase()))
+        }
         "blocks" => {
-            let text = values.first().map(expr_text).unwrap_or_default();
+            let text_val = args
+                .first()
+                .map(|arg| eval_ref(arg, env))
+                .unwrap_or(Cow::Borrowed(&Value::Null));
+            let text = expr_text_cow(&text_val);
             let blocks: Vec<Value> = if text.contains("\n\n") {
                 text.split("\n\n")
                     .map(str::trim)
@@ -2717,74 +3712,109 @@ fn eval_expr(expr: &Value, element: &Value, page: &Value, sheet: &str) -> Value 
                     .map(|value| json!(value))
                     .collect()
             };
-            Value::Array(blocks)
+            Cow::Owned(Value::Array(blocks))
         }
         "lastSentence" => {
-            let text = values.first().map(expr_text).unwrap_or_default();
+            let text_val = args
+                .first()
+                .map(|arg| eval_ref(arg, env))
+                .unwrap_or(Cow::Borrowed(&Value::Null));
+            let text = expr_text_cow(&text_val);
             let last = text
                 .split(['.', '!', '?'])
                 .rev()
                 .find(|sentence| !sentence.trim().is_empty())
                 .unwrap_or("")
                 .trim();
-            json!(last)
+            Cow::Owned(json!(last))
         }
         "containsAny" => {
-            let text = values
-                .first()
-                .map(expr_text)
-                .unwrap_or_default()
-                .to_lowercase();
-            let patterns = values
-                .get(1)
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            Value::Bool(
-                patterns
-                    .iter()
-                    .any(|pattern| text.contains(&expr_text(pattern).to_lowercase())),
-            )
+            let matched = if let (Some(arg0), Some(arg1)) = (args.first(), args.get(1)) {
+                let text_val = eval_ref(arg0, env);
+                let text = expr_text_cow(&text_val).to_lowercase();
+                let patterns_val = eval_ref(arg1, env);
+                patterns_val
+                    .as_array()
+                    .map(|patterns| {
+                        patterns
+                            .iter()
+                            .any(|pattern| text.contains(&expr_text_cow(pattern).to_lowercase()))
+                    })
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+            Cow::Owned(Value::Bool(matched))
         }
         "overshooting" => {
-            let text = values.first().map(expr_text).unwrap_or_default();
+            static CURVE_RE: OnceLock<Regex> = OnceLock::new();
+            let text_val = args
+                .first()
+                .map(|arg| eval_ref(arg, env))
+                .unwrap_or(Cow::Borrowed(&Value::Null));
+            let text = expr_text_cow(&text_val);
             let lower = text.to_lowercase();
             let mut found = lower.contains("bounce") || lower.contains("elastic");
             if !found {
-                if let Ok(regex) = Regex::new(r"cubic-bezier\(([^)]*)\)") {
-                    found = regex
-                        .captures_iter(&text)
-                        .any(|capture| is_overshooting(capture.get(0).unwrap().as_str()));
-                }
+                let regex =
+                    CURVE_RE.get_or_init(|| Regex::new(r"cubic-bezier\(([^)]*)\)").unwrap());
+                found = regex
+                    .captures_iter(&text)
+                    .any(|capture| is_overshooting(capture.get(0).unwrap().as_str()));
             }
-            Value::Bool(found)
+            Cow::Owned(Value::Bool(found))
         }
         "byIndex" => {
-            let index = values.get(1).and_then(expr_number).unwrap_or(-1.0);
-            values
-                .first()
-                .and_then(Value::as_array)
-                .and_then(|items| items.get(index as usize))
-                .cloned()
-                .unwrap_or(Value::Null)
+            let (Some(arg0), Some(arg1)) = (args.first(), args.get(1)) else {
+                return Cow::Owned(Value::Null);
+            };
+            let Some(raw_index) =
+                eval_num(arg1, env).filter(|value| value.is_finite() && *value >= 0.0)
+            else {
+                return Cow::Owned(Value::Null);
+            };
+            let index = raw_index as usize;
+            match eval_ref(arg0, env) {
+                Cow::Borrowed(value) => Cow::Borrowed(
+                    value
+                        .as_array()
+                        .and_then(|items| items.get(index))
+                        .unwrap_or(&Value::Null),
+                ),
+                Cow::Owned(value) => Cow::Owned(
+                    value
+                        .as_array()
+                        .and_then(|items| items.get(index))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                ),
+            }
         }
         "join" => {
-            let delimiter = values.get(1).map(expr_text).unwrap_or_default();
-            json!(values
+            let delimiter = args
+                .get(1)
+                .map(|arg| expr_text_cow(&eval_ref(arg, env)).into_owned())
+                .unwrap_or_default();
+            let out = args
                 .first()
-                .and_then(Value::as_array)
-                .map(|items| {
-                    items
-                        .iter()
-                        .map(expr_text)
-                        .collect::<Vec<_>>()
-                        .join(&delimiter)
+                .and_then(|arg| {
+                    eval_ref(arg, env).as_array().map(|items| {
+                        items
+                            .iter()
+                            .map(|item| expr_text_cow(item).into_owned())
+                            .collect::<Vec<_>>()
+                            .join(&delimiter)
+                    })
                 })
-                .unwrap_or_default())
+                .unwrap_or_default();
+            Cow::Owned(json!(out))
         }
         "nearestCard" => {
-            let elements = page["elements"].as_array().cloned().unwrap_or_default();
-            let mut current = element["parentIndex"].as_u64();
+            let elements = env.page["elements"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let mut current = env.element["parentIndex"].as_u64();
             let mut found = Value::Null;
             while let Some(parent) = current {
                 let Some(candidate) = elements.get(parent as usize) else {
@@ -2796,66 +3826,178 @@ fn eval_expr(expr: &Value, element: &Value, page: &Value, sheet: &str) -> Value 
                 }
                 current = candidate["parentIndex"].as_u64();
             }
-            found
+            Cow::Owned(found)
         }
         "uniqueCount" => {
             let mut unique = HashSet::new();
-            if let Some(Value::Array(items)) = values.first() {
-                for item in items {
-                    unique.insert(item.to_string());
+            if let Some(arg0) = args.first() {
+                if let Some(items) = eval_ref(arg0, env).as_array() {
+                    for item in items {
+                        unique.insert(exact_key(item));
+                    }
                 }
             }
-            json!(unique.len())
+            Cow::Owned(json!(unique.len()))
         }
-        "words" => json!(values
-            .first()
-            .map(expr_text)
-            .unwrap_or_default()
-            .split_whitespace()
-            .count()),
+        "words" => {
+            let text_val = args
+                .first()
+                .map(|arg| eval_ref(arg, env))
+                .unwrap_or(Cow::Borrowed(&Value::Null));
+            Cow::Owned(json!(expr_text_cow(&text_val).split_whitespace().count()))
+        }
         "min" | "max" => {
-            let list: Vec<f64> = if values.len() > 1 {
-                values.iter().filter_map(expr_number).collect()
+            let is_min = op == "min";
+            let result = if matches!(operand, Value::Array(list) if list.len() > 1) {
+                let mut acc = if is_min {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                };
+                for arg in args {
+                    if let Some(number) = eval_num(arg, env) {
+                        acc = if is_min {
+                            acc.min(number)
+                        } else {
+                            acc.max(number)
+                        };
+                    }
+                }
+                acc
+            } else if let Some(arg0) = args.first() {
+                match eval_ref(arg0, env).as_ref() {
+                    Value::Array(items) => {
+                        let mut acc = if is_min {
+                            f64::INFINITY
+                        } else {
+                            f64::NEG_INFINITY
+                        };
+                        for item in items {
+                            if let Some(number) = expr_number(item) {
+                                acc = if is_min {
+                                    acc.min(number)
+                                } else {
+                                    acc.max(number)
+                                };
+                            }
+                        }
+                        acc
+                    }
+                    other => expr_number(other).unwrap_or(0.0),
+                }
+            } else if is_min {
+                f64::INFINITY
             } else {
-                values
-                    .first()
-                    .map(|value| match value {
-                        Value::Array(values) => values.iter().filter_map(expr_number).collect(),
-                        other => vec![expr_number(other).unwrap_or(0.0)],
-                    })
-                    .unwrap_or_default()
+                f64::NEG_INFINITY
             };
-            let result = if op == "min" {
-                list.iter().copied().fold(f64::INFINITY, f64::min)
-            } else {
-                list.iter().copied().fold(f64::NEG_INFINITY, f64::max)
-            };
-            json!(if result.is_finite() { result } else { 0.0 })
+            Cow::Owned(json!(if result.is_finite() { result } else { 0.0 }))
         }
         "nthLargest" => {
-            let mut list: Vec<f64> = values
+            let mut list: Vec<f64> = args
                 .first()
-                .and_then(Value::as_array)
-                .map(|values| values.iter().filter_map(expr_number).collect())
+                .and_then(|arg| {
+                    eval_ref(arg, env)
+                        .as_array()
+                        .map(|items| items.iter().filter_map(expr_number).collect())
+                })
                 .unwrap_or_default();
             list.sort_by(|left, right| {
                 right.partial_cmp(left).unwrap_or(std::cmp::Ordering::Equal)
             });
-            let index = values.get(1).and_then(expr_number).unwrap_or(0.0) as usize;
-            json!(list.get(index).copied().unwrap_or(0.0))
+            let index = args
+                .get(1)
+                .and_then(|arg| eval_num(arg, env))
+                .unwrap_or(0.0) as usize;
+            Cow::Owned(json!(list.get(index).copied().unwrap_or(0.0)))
         }
-        "add" => json!(values.iter().filter_map(expr_number).sum::<f64>()),
-        "sub" => json!(
-            values.first().and_then(expr_number).unwrap_or(0.0)
-                - values.get(1).and_then(expr_number).unwrap_or(0.0)
-        ),
-        "mul" => json!(values.iter().filter_map(expr_number).product::<f64>()),
+        "add" => Cow::Owned(json!(args
+            .iter()
+            .filter_map(|arg| eval_num(arg, env))
+            .sum::<f64>())),
+        "sub" => Cow::Owned(json!(
+            args.first()
+                .and_then(|arg| eval_num(arg, env))
+                .unwrap_or(0.0)
+                - args
+                    .get(1)
+                    .and_then(|arg| eval_num(arg, env))
+                    .unwrap_or(0.0)
+        )),
+        "mul" => Cow::Owned(json!(args
+            .iter()
+            .filter_map(|arg| eval_num(arg, env))
+            .product::<f64>())),
         "div" => {
-            let denominator = values.get(1).and_then(expr_number).unwrap_or(1.0);
-            json!(values.first().and_then(expr_number).unwrap_or(0.0) / denominator)
+            let denominator = args
+                .get(1)
+                .and_then(|arg| eval_num(arg, env))
+                .unwrap_or(1.0);
+            Cow::Owned(json!(
+                args.first()
+                    .and_then(|arg| eval_num(arg, env))
+                    .unwrap_or(0.0)
+                    / denominator
+            ))
         }
-        _ => Value::Null,
+        "round" => Cow::Owned(json!(args
+            .first()
+            .and_then(|arg| eval_num(arg, env))
+            .map(f64::round)
+            .unwrap_or(0.0))),
+        "durationMax" => {
+            let text_val = args
+                .first()
+                .map(|arg| eval_ref(arg, env))
+                .unwrap_or(Cow::Borrowed(&Value::Null));
+            let max = duration_values(&expr_text_cow(&text_val))
+                .into_iter()
+                .fold(0.0_f64, f64::max);
+            Cow::Owned(json!(max))
+        }
+        "hasFocusRule" => {
+            let text_val = args
+                .first()
+                .map(|arg| eval_ref(arg, env))
+                .unwrap_or(Cow::Borrowed(&Value::Null));
+            Cow::Owned(Value::Bool(has_visible_focus_rule(&expr_text_cow(
+                &text_val,
+            ))))
+        }
+        _ => Cow::Owned(Value::Null),
     }
+}
+
+fn has_visible_focus_rule(text: &str) -> bool {
+    static RULE_RE: OnceLock<Regex> = OnceLock::new();
+    static DECL_RE: OnceLock<Regex> = OnceLock::new();
+    let rule = RULE_RE
+        .get_or_init(|| Regex::new(r"(?s)([^{}]*:focus(?:-visible)?[^{}]*)\{([^{}]*)\}").unwrap());
+    let declaration = DECL_RE.get_or_init(|| Regex::new(r"(?i)([a-z-]+)\s*:\s*([^;]+)").unwrap());
+    for captures in rule.captures_iter(text) {
+        let body = &captures[2];
+        for property in declaration.captures_iter(body) {
+            let name = property[1].to_lowercase();
+            if !(name.starts_with("outline")
+                || name.starts_with("box-shadow")
+                || name.starts_with("border")
+                || name.starts_with("background"))
+            {
+                continue;
+            }
+            let value = property[2].trim().to_lowercase();
+            if value.starts_with("none")
+                || value.starts_with("0")
+                || value.starts_with("transparent")
+                || value.starts_with("inherit")
+                || value.starts_with("initial")
+                || value.starts_with("unset")
+            {
+                continue;
+            }
+            return true;
+        }
+    }
+    false
 }
 
 pub(crate) fn is_first_paint(lifecycle: &str) -> bool {
@@ -2866,6 +4008,42 @@ pub(crate) fn is_first_paint(lifecycle: &str) -> bool {
         || lifecycle.contains("staged")
 }
 
+fn build_parent_index(elements: &[Value]) -> Vec<Option<usize>> {
+    elements
+        .iter()
+        .map(|element| {
+            element["parentIndex"]
+                .as_u64()
+                .map(|parent| parent as usize)
+        })
+        .collect()
+}
+
+fn ancestor_any_parents(parents: &[Option<usize>], index: usize, matches: &HashSet<usize>) -> bool {
+    let mut current = parents.get(index).copied().flatten();
+    while let Some(parent) = current {
+        if matches.contains(&parent) {
+            return true;
+        }
+        current = parents.get(parent).copied().flatten();
+    }
+    false
+}
+
+fn descendant_ancestors_set(parents: &[Option<usize>], matches: &[usize]) -> HashSet<usize> {
+    let mut ancestors = HashSet::new();
+    for &candidate in matches {
+        let mut current = parents.get(candidate).copied().flatten();
+        while let Some(parent) = current {
+            if !ancestors.insert(parent) {
+                break;
+            }
+            current = parents.get(parent).copied().flatten();
+        }
+    }
+    ancestors
+}
+
 pub(crate) fn rule_findings(
     rules: &RuleSet,
     oracle: &Oracle,
@@ -2874,7 +4052,11 @@ pub(crate) fn rule_findings(
     sheet_text: &str,
     lifecycle_evidence: Option<&Value>,
 ) -> Vec<Value> {
-    let elements = baseline["elements"].as_array().cloned().unwrap_or_default();
+    let baseline_elements = baseline["elements"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let baseline_parents = build_parent_index(baseline_elements);
     let mut findings = Vec::new();
 
     for rule in &rules.structural {
@@ -2896,20 +4078,15 @@ pub(crate) fn rule_findings(
         let staged_elements = staged
             .and_then(|value| value["baseline"]["elements"].as_array())
             .map(Vec::as_slice);
-        let elements = staged_elements.unwrap_or(elements.as_slice());
+        let elements = staged_elements.unwrap_or(baseline_elements);
+        let staged_parents = staged_elements.map(build_parent_index);
+        let parents = staged_parents.as_deref().unwrap_or(&baseline_parents);
         let page = staged.map(|value| &value["baseline"]).unwrap_or(baseline);
-        let expression_page = if rule.params.is_object() {
-            let mut page = page.clone();
-            page["ruleParams"] = rule.params.clone();
-            Some(page)
-        } else {
-            None
-        };
-        let expr_page = expression_page.as_ref().unwrap_or(page);
         let oracle = staged_oracle.as_ref().unwrap_or(oracle);
         if matches!(rule.scope.as_str(), "page" | "document" | "sheet") {
             if let Some(expression) = &rule.when {
-                let value = eval_expr(expression, &Value::Null, expr_page, sheet_text);
+                let env = EvalEnv::for_root(&Value::Null, page, sheet_text, &rule.params, parents);
+                let value = eval_ref(expression, &env);
                 if expr_truthy(&value) {
                     let mut finding = json!({
                         "check": rule.name,
@@ -2956,6 +4133,30 @@ pub(crate) fn rule_findings(
             .and_then(|cardinality| cardinality.region.as_ref())
             .map(|selector| oracle.matches(selector).iter().copied().collect())
             .unwrap_or_default();
+        let ancestor_sets: Vec<(&Constraint, HashSet<usize>)> = rule
+            .ancestors
+            .iter()
+            .map(|constraint| {
+                (
+                    constraint,
+                    oracle
+                        .matches(&constraint.selector)
+                        .iter()
+                        .copied()
+                        .collect(),
+                )
+            })
+            .collect();
+        let descendant_sets: Vec<(&Constraint, HashSet<usize>)> = rule
+            .descendants
+            .iter()
+            .map(|constraint| {
+                (
+                    constraint,
+                    descendant_ancestors_set(parents, oracle.matches(&constraint.selector)),
+                )
+            })
+            .collect();
         let mut candidates = Vec::new();
         let mut legacy_conditions: Vec<(usize, String, String)> = Vec::new();
         for index in candidate_indexes {
@@ -2968,33 +4169,24 @@ pub(crate) fn rule_findings(
             if element_ignored(element, &rule.name) {
                 continue;
             }
-            if exception_matches.contains(&index)
-                || ancestor_any(elements, index, &exception_matches)
+            if !exception_matches.is_empty()
+                && (exception_matches.contains(&index)
+                    || ancestor_any_parents(parents, index, &exception_matches))
             {
                 continue;
             }
             let mut conditions = Vec::new();
             let mut condition_failure: Option<(String, String)> = None;
-            for constraint in &rule.ancestors {
-                let matches: HashSet<usize> = oracle
-                    .matches(&constraint.selector)
-                    .iter()
-                    .copied()
-                    .collect();
-                let found = ancestor_any(elements, index, &matches);
+            for (constraint, matches) in &ancestor_sets {
+                let found = ancestor_any_parents(parents, index, matches);
                 conditions.push(found == constraint.any);
                 if found != constraint.any && condition_failure.is_none() {
                     condition_failure =
                         Some(("ancestors".to_string(), constraint.selector.clone()));
                 }
             }
-            for constraint in &rule.descendants {
-                let matches: HashSet<usize> = oracle
-                    .matches(&constraint.selector)
-                    .iter()
-                    .copied()
-                    .collect();
-                let found = descendant_any(elements, index, &matches);
+            for (constraint, ancestors) in &descendant_sets {
+                let found = ancestors.contains(&index);
                 conditions.push(found == constraint.any);
                 if found != constraint.any && condition_failure.is_none() {
                     condition_failure =
@@ -3041,7 +4233,7 @@ pub(crate) fn rule_findings(
                         return true;
                     }
                     region_matches.contains(index)
-                        || ancestor_any(elements, **index, &region_matches)
+                        || ancestor_any_parents(parents, **index, &region_matches)
                 })
                 .count() as u64;
             let below = cardinality.minimum.map(|min| count < min).unwrap_or(false);
@@ -3077,7 +4269,8 @@ pub(crate) fn rule_findings(
                 continue;
             };
             if let Some(expression) = &rule.when {
-                if !expr_truthy(&eval_expr(expression, element, expr_page, sheet_text)) {
+                let env = EvalEnv::for_root(element, page, sheet_text, &rule.params, parents);
+                if !expr_truthy(&eval_ref(expression, &env)) {
                     continue;
                 }
                 let mut finding = json!({
@@ -3217,4 +4410,464 @@ pub(crate) fn apply_unverified_rules(entries: Vec<Value>, ruleset: Option<&RuleS
                 .any(|rule| rule.id == check && !rule.enabled)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn eval_expr_short_circuits_and_regex_ops() {
+        let page = json!({
+            "elements": [],
+            "ruleParams": {}
+        });
+        let element = json!({
+            "tag": "div",
+            "text": "Error: invalid token, retry"
+        });
+
+        let cond_if = json!({
+            "if": [
+                { "equals": [{ "field": "tag" }, "div"] },
+                true,
+                { "matches": [{ "field": "text" }, "["] }
+            ]
+        });
+        assert_eq!(eval_expr(&cond_if, &element, &page, ""), json!(true));
+
+        let cond_all = json!({
+            "all": [
+                { "equals": [{ "field": "tag" }, "span"] },
+                { "matches": [{ "field": "text" }, "["] }
+            ]
+        });
+        assert_eq!(eval_expr(&cond_all, &element, &page, ""), json!(false));
+
+        let cond_any = json!({
+            "any": [
+                { "matches": [{ "field": "text" }, "invalid"] },
+                { "matches": [{ "field": "text" }, "["] }
+            ]
+        });
+        assert_eq!(eval_expr(&cond_any, &element, &page, ""), json!(true));
+
+        let count_expr = json!({
+            "countMatches": [{ "field": "text" }, "invalid|retry"]
+        });
+        assert_eq!(eval_expr(&count_expr, &element, &page, ""), json!(2));
+    }
+
+    #[test]
+    fn eval_expr_unique_and_group_ops() {
+        let page = json!({
+            "elements": [
+                { "group": "a", "tag": "div", "value": 10 },
+                { "group": "a", "tag": "span", "value": 10 },
+                { "group": "b", "tag": "div", "value": 20 }
+            ],
+            "ruleParams": {}
+        });
+        let element = &page["elements"][0];
+
+        let uniq = json!({
+            "uniqueCount": [{ "map": [{ "field": "page.elements" }, { "field": "group" }] }]
+        });
+        assert_eq!(eval_expr(&uniq, element, &page, ""), json!(2));
+
+        let grp_any = json!({
+            "groupAny": [
+                { "field": "page.elements" },
+                { "field": "group" },
+                {
+                    "gt": [
+                        { "uniqueCount": [{ "map": [{ "field": "values" }, { "field": "tag" }] }] },
+                        1
+                    ]
+                }
+            ]
+        });
+        assert_eq!(eval_expr(&grp_any, element, &page, ""), json!(true));
+
+        let grp_all = json!({
+            "groupAll": [
+                { "field": "page.elements" },
+                { "field": "group" },
+                {
+                    "equals": [
+                        { "uniqueCount": [{ "map": [{ "field": "values" }, { "field": "value" }] }] },
+                        1
+                    ]
+                }
+            ]
+        });
+        assert_eq!(eval_expr(&grp_all, element, &page, ""), json!(true));
+    }
+
+    #[test]
+    fn eval_expr_pair_any_and_ancestor_scale_on_large_dom() {
+        let mut elements = Vec::with_capacity(1500);
+        elements.push(json!({
+            "index": 0,
+            "parentIndex": null,
+            "tag": "main",
+            "text": "root",
+            "visible": true
+        }));
+        for i in 1..1500 {
+            let parent = if i <= 2 { 0 } else { (i - 1) / 2 };
+            elements.push(json!({
+                "index": i,
+                "parentIndex": parent,
+                "tag": "div",
+                "text": format!("item-{i}"),
+                "visible": i > 1495
+            }));
+        }
+        let page = json!({
+            "elements": elements,
+            "ruleParams": {}
+        });
+        let root = &page["elements"][0];
+
+        let eq_join_miss = json!({
+            "pairAny": [
+                { "field": "page.elements" },
+                {
+                    "all": [
+                        { "equals": [{ "field": "left.parentIndex" }, { "field": "right.parentIndex" }] },
+                        { "equals": [{ "field": "left.text" }, { "field": "right.text" }] }
+                    ]
+                }
+            ]
+        });
+
+        let start = Instant::now();
+        assert_eq!(eval_expr(&eq_join_miss, root, &page, ""), json!(false));
+
+        let filtered_ancestor = json!({
+            "pairAny": [
+                { "field": "page.elements" },
+                {
+                    "all": [
+                        { "field": "left.visible" },
+                        { "field": "right.visible" },
+                        { "not": [{ "ancestor": [{ "field": "left.index" }, { "field": "right.index" }] }] }
+                    ]
+                }
+            ]
+        });
+        assert_eq!(eval_expr(&filtered_ancestor, root, &page, ""), json!(true));
+        assert!(start.elapsed().as_millis() < 1000);
+    }
+
+    #[test]
+    fn eval_expr_interval_sweep_and_ancestor_join_scale_on_flat_siblings() {
+        let mut elements = Vec::with_capacity(2001);
+        elements.push(json!({
+            "index": 0,
+            "parentIndex": null,
+            "visible": true,
+            "rect": { "x": 0.0, "y": 0.0, "w": 1200.0, "h": 40000.0 }
+        }));
+        for i in 1..2001 {
+            let y = ((i - 1) as f64) * 20.0;
+            elements.push(json!({
+                "index": i,
+                "parentIndex": 0,
+                "visible": true,
+                "text": format!("row-{i}"),
+                "rect": { "x": 0.0, "y": y, "w": 1000.0, "h": 18.0 }
+            }));
+        }
+        let mut page = json!({
+            "elements": elements,
+            "ruleParams": {}
+        });
+        let parents = build_parent_index(page["elements"].as_array().unwrap());
+
+        let overlap_expr = json!({
+            "pairAny": [
+                { "field": "page.elements" },
+                {
+                    "all": [
+                        { "equals": [{ "field": "left.visible" }, true] },
+                        { "equals": [{ "field": "right.visible" }, true] },
+                        { "equals": [{ "field": "left.parentIndex" }, { "field": "right.parentIndex" }] },
+                        { "notEquals": [{ "field": "left.text" }, { "field": "right.text" }] },
+                        {
+                            "gt": [
+                                {
+                                    "sub": [
+                                        {
+                                            "min": [
+                                                { "add": [{ "field": "left.rect.x" }, { "field": "left.rect.w" }] },
+                                                { "add": [{ "field": "right.rect.x" }, { "field": "right.rect.w" }] }
+                                            ]
+                                        },
+                                        { "max": [{ "field": "left.rect.x" }, { "field": "right.rect.x" }] }
+                                    ]
+                                },
+                                4
+                            ]
+                        },
+                        {
+                            "gt": [
+                                {
+                                    "sub": [
+                                        {
+                                            "min": [
+                                                { "add": [{ "field": "left.rect.y" }, { "field": "left.rect.h" }] },
+                                                { "add": [{ "field": "right.rect.y" }, { "field": "right.rect.h" }] }
+                                            ]
+                                        },
+                                        { "max": [{ "field": "left.rect.y" }, { "field": "right.rect.y" }] }
+                                    ]
+                                },
+                                4
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let start = Instant::now();
+        let root_env = EvalEnv::for_root(
+            &page["elements"][0],
+            &page,
+            "",
+            &page["ruleParams"],
+            &parents,
+        );
+        assert_eq!(eval_ref(&overlap_expr, &root_env).as_ref(), &json!(false));
+
+        let anc_expr = json!({
+            "pairAny": [
+                { "field": "page.elements" },
+                {
+                    "all": [
+                        { "ancestor": [{ "field": "left.index" }, { "field": "right.index" }] },
+                        { "equals": [{ "field": "right.text" }, "row-1999"] }
+                    ]
+                }
+            ]
+        });
+        assert_eq!(eval_ref(&anc_expr, &root_env).as_ref(), &json!(true));
+        assert!(start.elapsed().as_millis() < 1000);
+
+        page["elements"][1500]["rect"]["y"] = json!(199.0 * 20.0 + 2.0);
+        let parents2 = build_parent_index(page["elements"].as_array().unwrap());
+        let env2 = EvalEnv::for_root(
+            &page["elements"][0],
+            &page,
+            "",
+            &page["ruleParams"],
+            &parents2,
+        );
+        assert_eq!(eval_ref(&overlap_expr, &env2).as_ref(), &json!(true));
+    }
+
+    #[test]
+    fn rule_findings_handles_ancestors_descendants_and_rule_params() {
+        let pack = json!({
+            "version": 2,
+            "rules": [
+                {
+                    "id": "custom-param-check",
+                    "severity": "advisory",
+                    "layer": "layout",
+                    "selector": "button",
+                    "ancestors": ["form"],
+                    "descendants": ["span"],
+                    "params": { "minPx": 16 },
+                    "when": { "lt": [{ "field": "fontSize" }, { "field": "page.ruleParams.minPx" }] },
+                    "message": "small button inside form"
+                }
+            ]
+        });
+        let (ruleset, notes) = parse_rules_v2(&pack, None).expect("valid rules");
+        assert!(notes.is_empty());
+
+        let oracle = oracle_from_value(&json!({
+            "selectors": {
+                "button": { "matches": [1, 4], "values": {} },
+                "form": { "matches": [0], "values": {} },
+                "span": { "matches": [2], "values": {} }
+            }
+        }))
+        .expect("valid oracle");
+
+        let baseline = json!({
+            "elements": [
+                { "index": 0, "parentIndex": null, "selector": "form", "tag": "form", "fontSize": "16px", "visible": true, "ignoreRules": [] },
+                { "index": 1, "parentIndex": 0, "selector": "button#small", "tag": "button", "fontSize": "12px", "visible": true, "ignoreRules": [] },
+                { "index": 2, "parentIndex": 1, "selector": "button#small > span", "tag": "span", "fontSize": "12px", "visible": true, "ignoreRules": [] },
+                { "index": 3, "parentIndex": null, "selector": "div", "tag": "div", "fontSize": "16px", "visible": true, "ignoreRules": [] },
+                { "index": 4, "parentIndex": 3, "selector": "button#outside", "tag": "button", "fontSize": "12px", "visible": true, "ignoreRules": [] }
+            ]
+        });
+
+        let findings = rule_findings(&ruleset, &oracle, &baseline, None, "", None);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0]["selector"], json!("button#small"));
+        assert_eq!(findings[0]["check"], json!("custom-param-check"));
+    }
+
+    #[test]
+    fn sheet_and_math_ops_and_source_rules_work_declaratively() {
+        let page = json!({
+            "elements": [
+                { "index": 0, "parentIndex": null, "visible": true, "cardLike": false, "rect": { "x": 0, "y": 0, "w": 800, "h": 400 } },
+                { "index": 1, "parentIndex": 0, "visible": true, "cardLike": true, "rect": { "x": 0, "y": 0, "w": 240, "h": 160 } },
+                { "index": 2, "parentIndex": 0, "visible": true, "cardLike": true, "rect": { "x": 260, "y": 0, "w": 240, "h": 160 } },
+                { "index": 3, "parentIndex": 0, "visible": true, "cardLike": true, "rect": { "x": 520, "y": 0, "w": 240, "h": 160 } }
+            ],
+            "ruleParams": {}
+        });
+        let parents = build_parent_index(page["elements"].as_array().unwrap());
+        let env = EvalEnv::for_root(
+            &Value::Null,
+            &page,
+            "a:focus { outline: none; }",
+            &page["ruleParams"],
+            &parents,
+        );
+        assert_eq!(
+            eval_ref(&json!({ "hasFocusRule": { "field": "sheet.text" } }), &env).as_ref(),
+            &json!(false)
+        );
+        let env_ok = EvalEnv::for_root(
+            &Value::Null,
+            &page,
+            "button:focus-visible { outline: 2px solid #111; }",
+            &page["ruleParams"],
+            &parents,
+        );
+        assert_eq!(
+            eval_ref(
+                &json!({ "hasFocusRule": { "field": "sheet.text" } }),
+                &env_ok
+            )
+            .as_ref(),
+            &json!(true)
+        );
+        assert_eq!(
+            eval_ref(&json!({ "durationMax": "150ms, 0.35s" }), &env).as_ref(),
+            &json!(0.35)
+        );
+        assert_eq!(
+            eval_ref(&json!({ "round": { "div": [243, 8] } }), &env).as_ref(),
+            &json!(30.0)
+        );
+
+        let (defaults, _) = load_default_rules(None).expect("default rules load");
+        assert!(defaults
+            .source_rules()
+            .iter()
+            .any(|rule| rule.id == "raw-color"));
+
+        let grid_expr = json!({
+            "groupAny": [
+                { "field": "page.elements" },
+                { "field": "parentIndex" },
+                { "gte": [{ "length": { "field": "values" } }, 3] }
+            ]
+        });
+        let single_card = json!({
+            "elements": [
+                { "index": 0, "parentIndex": null },
+                { "index": 1, "parentIndex": 0 }
+            ],
+            "ruleParams": {}
+        });
+        let single_parents = build_parent_index(single_card["elements"].as_array().unwrap());
+        let single_env = EvalEnv::for_root(
+            &Value::Null,
+            &single_card,
+            "",
+            &single_card["ruleParams"],
+            &single_parents,
+        );
+        assert_eq!(eval_ref(&grid_expr, &single_env).as_ref(), &json!(false));
+        assert_eq!(
+            eval_ref(&json!({ "length": { "field": "missing" } }), &single_env).as_ref(),
+            &json!(0)
+        );
+        assert_eq!(
+            eval_ref(
+                &json!({ "byIndex": [{ "field": "page.elements" }, -1] }),
+                &single_env
+            )
+            .as_ref(),
+            &Value::Null
+        );
+        assert_eq!(
+            eval_ref(&json!({ "ancestor": [0, 9999] }), &single_env).as_ref(),
+            &json!(false)
+        );
+        assert_eq!(
+            eval_ref(&json!({ "ancestor": [-1, 1] }), &single_env).as_ref(),
+            &json!(false)
+        );
+
+        let tmp = std::env::temp_dir().join(format!("ui-probe-src-test-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let base_path = tmp.join("base.json");
+        std::fs::write(
+            &base_path,
+            json!({
+                "version": 2,
+                "sourceRules": [
+                    { "id": "todo-marker", "severity": "P3", "layer": "source", "message": "todo marker", "pattern": "TODO" }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let override_path = tmp.join("rules.json");
+        std::fs::write(
+            &override_path,
+            json!({
+                "version": 2,
+                "sourceRules": [
+                    { "id": "transition-all", "enabled": false },
+                    { "id": "todo-marker", "severity": "P2" }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let (merged, _) = load_rules_with_default(&[override_path.clone(), base_path], None)
+            .expect("merged source rules");
+        assert!(!merged
+            .source_rules()
+            .iter()
+            .any(|rule| rule.id == "transition-all"));
+        let todo = merged
+            .source_rules()
+            .iter()
+            .find(|rule| rule.id == "todo-marker")
+            .expect("merged todo-marker");
+        assert_eq!(todo.severity, "P2");
+        assert!(!merged
+            .disabled_checks()
+            .contains(&"transition-all".to_string()));
+
+        let invalid_path = tmp.join("invalid-regex.json");
+        std::fs::write(
+            &invalid_path,
+            json!({
+                "version": 2,
+                "sourceRules": [
+                    { "id": "broken-re", "message": "bad", "pattern": "[unclosed" }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(load_rules_with_default(&[invalid_path], None).is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }

@@ -318,8 +318,11 @@ pub(crate) const JS: &str = r##"
       lastLineWidth: metrics.lastLineWidth,
       maxLineWidth: metrics.maxLineWidth,
       borderWidths: [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].map((v) => parseFloat(v) || 0),
+      backdropFilter: cs.backdropFilter,
+      transitionProperty: cs.transitionProperty,
       transitionDuration: cs.transitionDuration,
       transitionTimingFunction: cs.transitionTimingFunction,
+      cursor: cs.cursor,
       animationDuration: cs.animationDuration,
       animationTimingFunction: cs.animationTimingFunction,
       animationName: cs.animationName,
@@ -544,6 +547,7 @@ pub(crate) const ORACLE_JS: &str = r##"((selectors, properties) => {
   const result = {};
   for (const selector of selectors) {
     const matches = [];
+    const seen = new Set();
     let error = null;
     for (const root of roots) {
       let list;
@@ -557,7 +561,10 @@ pub(crate) const ORACLE_JS: &str = r##"((selectors, properties) => {
         const raw = el.getAttribute("data-ui-probe");
         if (raw === null) continue;
         const index = Number(raw);
-        if (!matches.includes(index)) matches.push(index);
+        if (!seen.has(index)) {
+          seen.add(index);
+          matches.push(index);
+        }
       }
     }
     const values = {};

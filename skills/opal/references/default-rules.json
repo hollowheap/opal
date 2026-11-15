@@ -4997,6 +4997,1113 @@
       "message": "a raster sits under a near-opaque wash or at near-zero opacity",
       "severity": "P2",
       "layer": "sheet"
+    },
+    {
+      "id": "sheet-focus",
+      "name": "sheet-focus",
+      "scope": "sheet",
+      "when": {
+        "all": [
+          {
+            "gt": [
+              {
+                "field": "page.counts.focusables"
+              },
+              0
+            ]
+          },
+          {
+            "not": {
+              "hasFocusRule": {
+                "field": "sheet.text"
+              }
+            }
+          }
+        ]
+      },
+      "message": "focusable elements exist but no focus rule declares a visible indicator",
+      "severity": "P2",
+      "layer": "sheet"
+    },
+    {
+      "id": "sheet-hover",
+      "name": "sheet-hover",
+      "scope": "sheet",
+      "when": {
+        "all": [
+          {
+            "gt": [
+              {
+                "field": "page.counts.interactive"
+              },
+              0
+            ]
+          },
+          {
+            "not": {
+              "contains": [
+                {
+                  "lower": {
+                    "field": "sheet.text"
+                  }
+                },
+                ":hover"
+              ]
+            }
+          }
+        ]
+      },
+      "message": "interactive elements exist but no hover rule",
+      "severity": "P3",
+      "layer": "sheet"
+    },
+    {
+      "id": "sheet-disabled",
+      "name": "sheet-disabled",
+      "scope": "sheet",
+      "when": {
+        "all": [
+          {
+            "gt": [
+              {
+                "field": "page.counts.formControls"
+              },
+              0
+            ]
+          },
+          {
+            "not": {
+              "containsAny": [
+                {
+                  "field": "sheet.text"
+                },
+                [
+                  ":disabled",
+                  "[disabled]"
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "message": "form controls exist but no disabled rule",
+      "severity": "P2",
+      "layer": "sheet"
+    },
+    {
+      "id": "sheet-selection",
+      "name": "sheet-selection",
+      "scope": "sheet",
+      "when": {
+        "not": {
+          "contains": [
+            {
+              "lower": {
+                "field": "sheet.text"
+              }
+            },
+            "::selection"
+          ]
+        }
+      },
+      "message": "no selection style is declared",
+      "severity": "P3",
+      "layer": "sheet"
+    },
+    {
+      "id": "sheet-placeholder",
+      "name": "sheet-placeholder",
+      "scope": "sheet",
+      "when": {
+        "all": [
+          {
+            "gt": [
+              {
+                "field": "page.counts.textInputs"
+              },
+              0
+            ]
+          },
+          {
+            "not": {
+              "contains": [
+                {
+                  "lower": {
+                    "field": "sheet.text"
+                  }
+                },
+                "::placeholder"
+              ]
+            }
+          }
+        ]
+      },
+      "message": "text inputs exist but no placeholder style is declared",
+      "severity": "P3",
+      "layer": "sheet"
+    },
+    {
+      "id": "sheet-tap-highlight",
+      "name": "sheet-tap-highlight",
+      "scope": "sheet",
+      "when": {
+        "not": {
+          "contains": [
+            {
+              "lower": {
+                "field": "sheet.text"
+              }
+            },
+            "-webkit-tap-highlight-color"
+          ]
+        }
+      },
+      "message": "no -webkit-tap-highlight-color reset is declared",
+      "severity": "P3",
+      "layer": "sheet"
+    },
+    {
+      "id": "sheet-reduced-motion",
+      "name": "sheet-reduced-motion",
+      "scope": "sheet",
+      "when": {
+        "all": [
+          {
+            "not": {
+              "contains": [
+                {
+                  "lower": {
+                    "field": "sheet.text"
+                  }
+                },
+                "prefers-reduced-motion"
+              ]
+            }
+          },
+          {
+            "any": [
+              {
+                "containsAny": [
+                  {
+                    "field": "sheet.text"
+                  },
+                  [
+                    "@keyframes",
+                    "animation:",
+                    "transition:"
+                  ]
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "field": "page.elements"
+                  },
+                  {
+                    "all": [
+                      {
+                        "equals": [
+                          {
+                            "field": "visible"
+                          },
+                          true
+                        ]
+                      },
+                      {
+                        "any": [
+                          {
+                            "all": [
+                              {
+                                "matches": [
+                                  {
+                                    "field": "animationName"
+                                  },
+                                  "\\S"
+                                ]
+                              },
+                              {
+                                "notEquals": [
+                                  {
+                                    "field": "animationName"
+                                  },
+                                  "none"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "gt": [
+                              {
+                                "durationMax": {
+                                  "field": "transitionDuration"
+                                }
+                              },
+                              0
+                            ]
+                          },
+                          {
+                            "gt": [
+                              {
+                                "durationMax": {
+                                  "field": "animationDuration"
+                                }
+                              },
+                              0
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "motion is declared but no prefers-reduced-motion block exists",
+      "severity": "P2",
+      "layer": "sheet"
+    },
+    {
+      "id": "icon-tile-stack",
+      "name": "icon-tile-stack",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "iconTile"
+              },
+              true
+            ]
+          },
+          {
+            "any": [
+              {
+                "gt": [
+                  {
+                    "byIndex": [
+                      {
+                        "field": "radiusPx"
+                      },
+                      0
+                    ]
+                  },
+                  0
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "alpha": {
+                      "field": "backgroundColor"
+                    }
+                  },
+                  0
+                ]
+              },
+              {
+                "gt": [
+                  {
+                    "byIndex": [
+                      {
+                        "field": "borderWidths"
+                      },
+                      0
+                    ]
+                  },
+                  0
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "small icon placed in a tinted rounded square box",
+      "severity": "P3",
+      "layer": "layout"
+    },
+    {
+      "id": "hero-metric-template",
+      "name": "hero-metric-template",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "heroMetric"
+              },
+              true
+            ]
+          }
+        ]
+      },
+      "message": "oversized numeric metric matches a generic hero KPI template",
+      "severity": "P3",
+      "layer": "content"
+    },
+    {
+      "id": "glassmorphism",
+      "name": "glassmorphism",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "matches": [
+              {
+                "lower": {
+                  "field": "backdropFilter"
+                }
+              },
+              "blur\\("
+            ]
+          }
+        ]
+      },
+      "message": "decorative backdrop-filter blur effect",
+      "severity": "P3",
+      "layer": "sheet"
+    },
+    {
+      "id": "pure-black-white",
+      "name": "pure-black-white",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "any": [
+              {
+                "all": [
+                  {
+                    "gte": [
+                      {
+                        "alpha": {
+                          "field": "backgroundColor"
+                        }
+                      },
+                      0.9
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "red": {
+                          "field": "backgroundColor"
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "green": {
+                          "field": "backgroundColor"
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "blue": {
+                          "field": "backgroundColor"
+                        }
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+              {
+                "all": [
+                  {
+                    "equals": [
+                      {
+                        "field": "hasText"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "gte": [
+                      {
+                        "alpha": {
+                          "field": "color"
+                        }
+                      },
+                      0.9
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "red": {
+                          "field": "color"
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "green": {
+                          "field": "color"
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "blue": {
+                          "field": "color"
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "number": {
+                      "field": "background.r"
+                    }
+                  },
+                  {
+                    "any": [
+                      {
+                        "lt": [
+                          {
+                            "field": "background.r"
+                          },
+                          250
+                        ]
+                      },
+                      {
+                        "lt": [
+                          {
+                            "field": "background.g"
+                          },
+                          250
+                        ]
+                      },
+                      {
+                        "lt": [
+                          {
+                            "field": "background.b"
+                          },
+                          250
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "all": [
+                  {
+                    "equals": [
+                      {
+                        "field": "hasText"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "gte": [
+                      {
+                        "alpha": {
+                          "field": "color"
+                        }
+                      },
+                      0.9
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "red": {
+                          "field": "color"
+                        }
+                      },
+                      255
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "green": {
+                          "field": "color"
+                        }
+                      },
+                      255
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "blue": {
+                          "field": "color"
+                        }
+                      },
+                      255
+                    ]
+                  },
+                  {
+                    "number": {
+                      "field": "background.r"
+                    }
+                  },
+                  {
+                    "lte": [
+                      {
+                        "field": "background.r"
+                      },
+                      12
+                    ]
+                  },
+                  {
+                    "lte": [
+                      {
+                        "field": "background.g"
+                      },
+                      12
+                    ]
+                  },
+                  {
+                    "lte": [
+                      {
+                        "field": "background.b"
+                      },
+                      12
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "pure #000000 or pure #ffffff on dark neutral instead of tinted greys",
+      "severity": "P3",
+      "layer": "sheet"
+    },
+    {
+      "id": "dark-glow",
+      "name": "dark-glow",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "shadowChromatic": {
+              "field": "focusStyle.boxShadow"
+            }
+          },
+          {
+            "gte": [
+              {
+                "shadowBlur": {
+                  "field": "focusStyle.boxShadow"
+                }
+              },
+              20
+            ]
+          },
+          {
+            "any": [
+              {
+                "all": [
+                  {
+                    "gte": [
+                      {
+                        "alpha": {
+                          "field": "backgroundColor"
+                        }
+                      },
+                      0.5
+                    ]
+                  },
+                  {
+                    "dark": {
+                      "field": "backgroundColor"
+                    }
+                  }
+                ]
+              },
+              {
+                "all": [
+                  {
+                    "number": {
+                      "field": "background.r"
+                    }
+                  },
+                  {
+                    "lt": [
+                      {
+                        "field": "background.r"
+                      },
+                      60
+                    ]
+                  },
+                  {
+                    "lt": [
+                      {
+                        "field": "background.g"
+                      },
+                      60
+                    ]
+                  },
+                  {
+                    "lt": [
+                      {
+                        "field": "background.b"
+                      },
+                      60
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "wide chromatic glow shadow on a dark surface",
+      "severity": "P3",
+      "layer": "sheet"
+    },
+    {
+      "id": "transition-all",
+      "name": "transition-all",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "matches": [
+              {
+                "lower": {
+                  "field": "transitionProperty"
+                }
+              },
+              "\\ball\\b"
+            ]
+          },
+          {
+            "gt": [
+              {
+                "durationMax": {
+                  "field": "transitionDuration"
+                }
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "message": "active transition animates all properties instead of specific compositor-friendly properties",
+      "severity": "P3",
+      "layer": "sheet"
+    },
+    {
+      "id": "clickable-non-control",
+      "name": "clickable-non-control",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "cursor"
+              },
+              "pointer"
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "disabled"
+              },
+              false
+            ]
+          },
+          {
+            "not": {
+              "in": [
+                {
+                  "field": "tag"
+                },
+                [
+                  "a",
+                  "button",
+                  "input",
+                  "select",
+                  "textarea",
+                  "summary",
+                  "label",
+                  "option",
+                  "area"
+                ]
+              ]
+            }
+          },
+          {
+            "any": [
+              {
+                "not": {
+                  "number": {
+                    "field": "parentIndex"
+                  }
+                }
+              },
+              {
+                "all": [
+                  {
+                    "notEquals": [
+                      {
+                        "get": [
+                          {
+                            "byIndex": [
+                              {
+                                "field": "page.elements"
+                              },
+                              {
+                                "field": "parentIndex"
+                              }
+                            ]
+                          },
+                          "cursor"
+                        ]
+                      },
+                      "pointer"
+                    ]
+                  },
+                  {
+                    "not": {
+                      "in": [
+                        {
+                          "get": [
+                            {
+                              "byIndex": [
+                                {
+                                  "field": "page.elements"
+                                },
+                                {
+                                  "field": "parentIndex"
+                                }
+                              ]
+                            },
+                            "tag"
+                          ]
+                        },
+                        [
+                          "a",
+                          "button",
+                          "summary",
+                          "label"
+                        ]
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "non-control element uses pointer cursor instead of native button or anchor",
+      "severity": "P3",
+      "layer": "layout"
+    },
+    {
+      "id": "identical-card-grid",
+      "name": "identical-card-grid",
+      "scope": "page",
+      "when": {
+        "groupAny": [
+          {
+            "filter": [
+              {
+                "field": "page.elements"
+              },
+              {
+                "all": [
+                  {
+                    "equals": [
+                      {
+                        "field": "visible"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "equals": [
+                      {
+                        "field": "cardLike"
+                      },
+                      true
+                    ]
+                  },
+                  {
+                    "number": {
+                      "field": "parentIndex"
+                    }
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "rect.w"
+                      },
+                      40
+                    ]
+                  },
+                  {
+                    "gt": [
+                      {
+                        "field": "rect.h"
+                      },
+                      40
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "join": [
+              {
+                "concat": [
+                  {
+                    "field": "parentIndex"
+                  },
+                  {
+                    "round": {
+                      "div": [
+                        {
+                          "field": "rect.w"
+                        },
+                        8
+                      ]
+                    }
+                  },
+                  {
+                    "round": {
+                      "div": [
+                        {
+                          "field": "rect.h"
+                        },
+                        8
+                      ]
+                    }
+                  }
+                ]
+              },
+              ":"
+            ]
+          },
+          {
+            "gte": [
+              {
+                "length": {
+                  "field": "values"
+                }
+              },
+              3
+            ]
+          }
+        ]
+      },
+      "message": "three or more identical-sized cards repeat inside one grid container",
+      "severity": "P3",
+      "layer": "layout"
+    },
+    {
+      "id": "modal-abuse",
+      "name": "modal-abuse",
+      "selector": "*",
+      "operator": "all",
+      "when": {
+        "all": [
+          {
+            "equals": [
+              {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "any": [
+              {
+                "equals": [
+                  {
+                    "field": "tag"
+                  },
+                  "dialog"
+                ]
+              },
+              {
+                "in": [
+                  {
+                    "field": "role"
+                  },
+                  [
+                    "dialog",
+                    "alertdialog"
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "visible modal or dialog interrupts initial page load",
+      "severity": "P3",
+      "layer": "layout"
+    }
+  ],
+  "sourceRules": [
+    {
+      "id": "raw-color",
+      "severity": "P2",
+      "layer": "source",
+      "message": "raw color literal",
+      "pattern": "#[0-9a-fA-F]{3,8}\\b|\\brgba?\\(|\\bhsla?\\(",
+      "excludePaths": [
+        "(^|/)tokens\\.",
+        "(^|/)theme\\.",
+        "(^|/)[^/]*\\.tokens\\.",
+        "(^|/)tokens/"
+      ]
+    },
+    {
+      "id": "outline-none",
+      "severity": "P2",
+      "layer": "source",
+      "message": "focus outline suppressed",
+      "pattern": "outline:\\s*none|outline-none"
+    },
+    {
+      "id": "transition-all",
+      "severity": "P3",
+      "layer": "source",
+      "message": "transition on every property",
+      "pattern": "transition-all|transition:\\s*all"
+    },
+    {
+      "id": "will-change",
+      "severity": "P3",
+      "layer": "source",
+      "message": "manual compositor hint",
+      "pattern": "will-change"
+    },
+    {
+      "id": "gradient-text",
+      "severity": "P3",
+      "layer": "source",
+      "message": "gradient text",
+      "pattern": "bg-clip-text|text-transparent"
+    },
+    {
+      "id": "glass",
+      "severity": "P3",
+      "layer": "source",
+      "message": "decorative blur",
+      "pattern": "backdrop-blur|backdrop-filter"
+    },
+    {
+      "id": "viewport-width",
+      "severity": "P3",
+      "layer": "source",
+      "message": "100vw sizing",
+      "pattern": "100vw"
+    },
+    {
+      "id": "arbitrary-px",
+      "severity": "P3",
+      "layer": "source",
+      "message": "arbitrary pixel value",
+      "pattern": "\\[[0-9]+px\\]"
+    },
+    {
+      "id": "clickable-div",
+      "severity": "P2",
+      "layer": "source",
+      "message": "click handler on a non-control",
+      "pattern": "<(div|span)[^>]*(onClick|@click)"
+    },
+    {
+      "id": "motion",
+      "severity": "P3",
+      "layer": "source",
+      "message": "motion declaration",
+      "pattern": "@keyframes|animation:|animate-"
     }
   ]
 }

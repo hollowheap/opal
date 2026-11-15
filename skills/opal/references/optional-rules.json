@@ -1,0 +1,43 @@
+{
+  "$schema": "./rules.schema.json",
+  "version": 2,
+  "pack": "opal-optional",
+  "rules": [
+    {
+      "id": "hairline-border-wide-shadow",
+      "name": "hairline-border-wide-shadow",
+      "selector": "*",
+      "operator": "all",
+      "params": {
+        "blurPx": 8
+      },
+      "when": {
+        "all": [
+          { "equals": [{ "field": "visible" }, true] },
+          { "notEquals": [{ "field": "focusStyle.boxShadow" }, "none"] },
+          { "not": { "shadowInset": { "field": "focusStyle.boxShadow" } } },
+          {
+            "gte": [
+              { "shadowBlur": { "field": "focusStyle.boxShadow" } },
+              { "param": "blurPx" }
+            ]
+          },
+          {
+            "anyOf": [
+              { "field": "borderWidths" },
+              {
+                "all": [
+                  { "gt": [{ "field": "self" }, 0] },
+                  { "lte": [{ "field": "self" }, 1.5] }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "hairline border with wide shadow",
+      "severity": "advisory",
+      "layer": "layout"
+    }
+  ]
+}

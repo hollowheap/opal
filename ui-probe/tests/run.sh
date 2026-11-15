@@ -110,7 +110,7 @@ design_url=$(file_url design-drift.html)
 dtcg="$here/design-dtcg.json"
 pack="$root/skills/opal/references/default-rules.json"
 jqr default-pack-scrub "$pack" '[.rules[].id] | index("gpt-thin-border-wide-shadow") | not'
-jqr default-pack-count "$pack" '.rules | length == 62'
+jqr default-pack-count "$pack" '(.rules | length == 78) and (.sourceRules | length == 10)'
 jqr default-pack-fixed "$pack" '[.rules[].id] | (index("contrast") != null) and (index("heading-spacing-relation") != null)'
 
 run clean 0 "$tmp/clean.json" --url "$clean_url" --no-sandbox --pretty
@@ -459,6 +459,103 @@ fi
 run_in source-baseline-write "$tmp/source-suppress" 0 "$tmp/source-baseline-write.json" source . --source-all --write-baseline --pretty
 run_in source-baseline-read "$tmp/source-suppress" 0 "$tmp/source-baseline-read.json" source . --source-all --pretty
 jqr source-baseline-suppressed "$tmp/source-baseline-read.json" '.baseline.suppressed == 1 and .summary.findings == 0'
+
+cat >"$tmp/source-custom.json" <<'EOF'
+{
+  "version": 2,
+  "sourceRules": [
+    { "id": "raw-color", "enabled": false },
+    { "id": "custom-todo", "severity": "P3", "layer": "source", "message": "todo marker", "pattern": "TODO" }
+  ]
+}
+EOF
+mkdir -p "$tmp/source-custom"
+printf 'const color = "#ff0000";\n// TODO fixme\n' >"$tmp/source-custom/app.tsx"
+run source-custom-rules 0 "$tmp/source-custom.json.out" source "$tmp/source-custom" --source-all --rules "$tmp/source-custom.json" --pretty
+jqr source-custom-rules "$tmp/source-custom.json.out" '([.findings[].check] | index("raw-color") == null) and ([.findings[].check] | index("custom-todo") != null)'
+
+cat >"$tmp/impeccable.html" <<'EOF'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { margin: 0; background: #000000; color: #ffffff; font-family: system-ui, sans-serif; }
+    .glass { backdrop-filter: blur(8px); padding: 12px; transition: all 0.3s ease; }
+    .glow { background: #101218; box-shadow: 0 0 28px rgba(59, 130, 246, 0.7); padding: 12px; }
+    .fake-btn { cursor: pointer; display: inline-block; padding: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 220px); gap: 16px; }
+    .card { width: 220px; height: 140px; background: #141820; border: 1px solid #333; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); border-radius: 8px; }
+    .tile { width: 40px; height: 40px; border-radius: 8px; background: rgba(59, 130, 246, 0.2); display: flex; align-items: center; justify-content: center; }
+    .kpi { font-size: 42px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <section class="glass glow">
+    <div class="fake-btn">Action</div>
+    <div class="tile"><svg width="20" height="20"><circle cx="10" cy="10" r="8" /></svg></div>
+    <h3>Feature</h3>
+    <div class="kpi">99.9%</div>
+  </section>
+  <section class="grid">
+    <div class="card">Card 1 body text for layout</div>
+    <div class="card">Card 2 body text for layout</div>
+    <div class="card">Card 3 body text for layout</div>
+  </section>
+  <dialog open>Blocking dialog</dialog>
+</body>
+</html>
+EOF
+saved_home=$HOME
+export HOME="$tmp/clean-home"
+mkdir -p "$HOME"
+run impeccable-rules 2 "$tmp/impeccable.json" --url "file://$tmp/impeccable.html" --no-sandbox --pretty
+for check in sheet-selection sheet-tap-highlight icon-tile-stack hero-metric-template glassmorphism pure-black-white dark-glow transition-all clickable-non-control identical-card-grid modal-abuse; do
+  jqr "impeccable-$check" "$tmp/impeccable.json" "[.findings[].check] | index(\"$check\") != null"
+done
+
+cat >"$tmp/light-single-card.html" <<'EOF'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { margin: 0; background: #ffffff; color: #000000; font-family: system-ui, sans-serif; }
+    .card { width: 240px; height: 140px; border: 1px solid #d0d0d0; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-radius: 8px; transition: all 0.2s ease; }
+    @media (prefers-reduced-motion: reduce) {}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">Single card on white page</div>
+  </main>
+</body>
+</html>
+EOF
+cat >"$tmp/disable-source-transition.json" <<'EOF'
+{
+  "version": 2,
+  "sourceRules": [
+    { "id": "transition-all", "enabled": false }
+  ]
+}
+EOF
+run light-single-card 0 "$tmp/light-single-card.json" --url "file://$tmp/light-single-card.html" --rules "$tmp/disable-source-transition.json" --no-sandbox --pretty
+jqr light-no-pure-black "$tmp/light-single-card.json" '[.findings[].check] | index("pure-black-white") == null'
+jqr light-no-identical-grid "$tmp/light-single-card.json" '[.findings[].check] | index("identical-card-grid") == null'
+jqr source-disable-keeps-rendered-transition-all "$tmp/light-single-card.json" '[.findings[].check] | index("transition-all") != null'
+export HOME="$saved_home"
+
+cat >"$tmp/invalid-source-regex.json" <<'EOF'
+{
+  "version": 2,
+  "sourceRules": [
+    { "id": "broken", "message": "broken", "pattern": "[unclosed" }
+  ]
+}
+EOF
+run invalid-source-regex 1 "$tmp/invalid-source-regex.out" source "$tmp/source-custom" --rules "$tmp/invalid-source-regex.json"
+err_has invalid-source-regex "rules:"
 
 echo "ui-probe tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

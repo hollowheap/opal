@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 mod capture;
@@ -1445,14 +1445,13 @@ async fn scrape_once_async(
         }
     }
 
-    let mut extra = stylesheet_checks(&baseline, &sheet_text);
+    let mut extra = Vec::new();
     {
         let diagnostics = diagnostics.lock().unwrap();
         extra.extend(runtime_findings(&diagnostics));
     }
 
-    let (motion, motion_findings) = motion_evidence(&baseline, &sheet_text, false);
-    extra.extend(motion_findings);
+    let motion = motion_evidence(&baseline);
     let mut design_unverified: Vec<Value> = Vec::new();
     if let Some(spec) = design {
         let (design_findings, notes) = design_checks(&baseline, spec, &sheet_text);
@@ -1611,15 +1610,11 @@ impl Oracle {
 
 fn colour_unverified(baseline: &Value) -> Vec<Value> {
     let mut out = Vec::new();
-    for element in baseline["elements"].as_array().cloned().unwrap_or_default() {
+    for element in baseline["elements"].as_array().into_iter().flatten() {
         if !element["visible"].as_bool().unwrap_or(false) {
             continue;
         }
-        for failure in element["colourFailures"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-        {
+        for failure in element["colourFailures"].as_array().into_iter().flatten() {
             out.push(json!({
                 "check": "colour",
                 "reason": "colour conversion failed",
@@ -2217,8 +2212,8 @@ fn dedupe_values(values: Vec<Value>) -> Vec<Value> {
 
 fn sheets_text(sheets: &Value) -> String {
     let mut text = String::new();
-    for sheet in sheets["sheets"].as_array().cloned().unwrap_or_default() {
-        for rule in sheet["rules"].as_array().cloned().unwrap_or_default() {
+    for sheet in sheets["sheets"].as_array().into_iter().flatten() {
+        for rule in sheet["rules"].as_array().into_iter().flatten() {
             if let Some(value) = rule.as_str() {
                 text.push_str(value);
                 text.push('\n');
@@ -2241,111 +2236,6 @@ fn sheets_text(sheets: &Value) -> String {
         }
     }
     text
-}
-
-fn stylesheet_checks(baseline: &Value, text: &str) -> Vec<Value> {
-    let mut findings = Vec::new();
-    let lower = text.to_lowercase();
-    let counts = &baseline["counts"];
-    let focusables = counts["focusables"].as_u64().unwrap_or(0);
-    let interactive = counts["interactive"].as_u64().unwrap_or(0);
-    let form_controls = counts["formControls"].as_u64().unwrap_or(0);
-    let text_inputs = counts["textInputs"].as_u64().unwrap_or(0);
-
-    if focusables > 0 && !has_visible_focus_rule(text) {
-        findings.push(json!({
-            "check": "sheet-focus",
-            "severity": "P2",
-            "selector": ":root",
-            "message": "focusable elements exist but no focus rule declares a visible indicator",
-            "evidence": { "focusables": focusables }
-        }));
-    }
-    if interactive > 0 && !lower.contains(":hover") {
-        findings.push(json!({
-            "check": "sheet-hover",
-            "severity": "P3",
-            "selector": ":root",
-            "message": "interactive elements exist but no hover rule",
-            "evidence": { "interactive": interactive }
-        }));
-    }
-    if form_controls > 0 && !(lower.contains(":disabled") || lower.contains("[disabled]")) {
-        findings.push(json!({
-            "check": "sheet-disabled",
-            "severity": "P2",
-            "selector": ":root",
-            "message": "form controls exist but no disabled rule",
-            "evidence": { "formControls": form_controls }
-        }));
-    }
-    if !lower.contains("::selection") {
-        findings.push(json!({
-            "check": "sheet-selection",
-            "severity": "P3",
-            "selector": "::selection",
-            "message": "no selection style is declared",
-            "evidence": {}
-        }));
-    }
-    if text_inputs > 0 && !lower.contains("::placeholder") {
-        findings.push(json!({
-            "check": "sheet-placeholder",
-            "severity": "P3",
-            "selector": "::placeholder",
-            "message": "text inputs exist but no placeholder style is declared",
-            "evidence": { "textInputs": text_inputs }
-        }));
-    }
-    if !lower.contains("-webkit-tap-highlight-color") {
-        findings.push(json!({
-            "check": "sheet-tap-highlight",
-            "severity": "P3",
-            "selector": ":root",
-            "message": "no -webkit-tap-highlight-color reset is declared",
-            "evidence": {}
-        }));
-    }
-    if motion_declared(baseline, text) && !lower.contains("prefers-reduced-motion") {
-        findings.push(json!({
-            "check": "sheet-reduced-motion",
-            "severity": "P2",
-            "selector": ":root",
-            "message": "motion is declared but no prefers-reduced-motion block exists",
-            "evidence": {}
-        }));
-    }
-    findings
-}
-
-fn has_visible_focus_rule(text: &str) -> bool {
-    let rule = Regex::new(r"(?s)([^{}]*:focus(?:-visible)?[^{}]*)\{([^{}]*)\}").unwrap();
-    let declaration = Regex::new(r"(?i)([a-z-]+)\s*:\s*([^;]+)").unwrap();
-    for captures in rule.captures_iter(text) {
-        let body = &captures[2];
-        for property in declaration.captures_iter(body) {
-            let name = property[1].to_lowercase();
-            if !(name.starts_with("outline")
-                || name.starts_with("box-shadow")
-                || name.starts_with("border")
-                || name.starts_with("background"))
-            {
-                continue;
-            }
-            let value = property[2].trim().to_lowercase();
-            if value.starts_with("none")
-                || value.starts_with("0")
-                || value.starts_with("transparent")
-                || value.starts_with("inherit")
-                || value.starts_with("initial")
-                || value.starts_with("unset")
-            {
-                continue;
-            }
-            return true;
-        }
-    }
-    false
 }
 
 fn split_top_level(raw: &str) -> Vec<String> {
@@ -2379,40 +2269,15 @@ fn split_top_level(raw: &str) -> Vec<String> {
     out
 }
 
-fn motion_declared(baseline: &Value, text: &str) -> bool {
-    let lower = text.to_lowercase();
-    if lower.contains("@keyframes") || lower.contains("animation:") || lower.contains("transition:")
-    {
-        return true;
-    }
-    baseline["elements"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .iter()
-        .filter(|element| element["visible"].as_bool().unwrap_or(false))
-        .any(|element| {
-            element["animationName"].as_str().unwrap_or("none") != "none"
-                || duration_values(element["transitionDuration"].as_str().unwrap_or("0s"))
-                    .iter()
-                    .any(|value| *value > 0.0)
-                || duration_values(element["animationDuration"].as_str().unwrap_or("0s"))
-                    .iter()
-                    .any(|value| *value > 0.0)
-        })
-}
-
-pub(crate) fn visible_elements(data: &Value) -> Vec<Value> {
+pub(crate) fn visible_element_refs(data: &Value) -> impl Iterator<Item = &Value> {
     data["elements"]
         .as_array()
-        .cloned()
-        .unwrap_or_default()
         .into_iter()
+        .flatten()
         .filter(|element| element["visible"].as_bool().unwrap_or(false))
-        .collect()
 }
 
-fn duration_values(raw: &str) -> Vec<f64> {
+pub(crate) fn duration_values(raw: &str) -> Vec<f64> {
     raw.split(',')
         .filter_map(|value| {
             let value = value.trim();
@@ -2427,13 +2292,11 @@ fn duration_values(raw: &str) -> Vec<f64> {
         .collect()
 }
 
-fn motion_evidence(baseline: &Value, text: &str, emit_findings: bool) -> (Value, Vec<Value>) {
+fn motion_evidence(baseline: &Value) -> Value {
     let mut durations: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
     let mut timings: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
-    let mut findings = Vec::new();
 
-    for element in visible_elements(baseline) {
-        let selector = element["selector"].as_str().unwrap_or("?");
+    for element in visible_element_refs(baseline) {
         for raw in [
             element["transitionDuration"].as_str().unwrap_or(""),
             element["animationDuration"].as_str().unwrap_or(""),
@@ -2444,62 +2307,20 @@ fn motion_evidence(baseline: &Value, text: &str, emit_findings: bool) -> (Value,
                 }
             }
         }
-        for (property, raw) in [
-            (
-                "transitionTimingFunction",
-                element["transitionTimingFunction"].as_str().unwrap_or(""),
-            ),
-            (
-                "animationTimingFunction",
-                element["animationTimingFunction"].as_str().unwrap_or(""),
-            ),
+        for raw in [
+            element["transitionTimingFunction"].as_str().unwrap_or(""),
+            element["animationTimingFunction"].as_str().unwrap_or(""),
         ] {
             for value in split_top_level(raw) {
-                *timings.entry(value.clone()).or_insert(0) += 1;
-                if emit_findings && is_overshooting(&value) {
-                    findings.push(json!({
-                        "check": "bounce-easing",
-                        "severity": "P3",
-                        "selector": selector,
-                        "message": format!("{property} uses an overshooting timing function"),
-                        "evidence": { "property": property.strip_prefix('@').unwrap_or(property), "value": value }
-                    }));
-                }
+                *timings.entry(value).or_insert(0) += 1;
             }
         }
     }
 
-    let bounce = Regex::new(r"(?i)\b(bounce|elastic)\b").unwrap();
-    if emit_findings && bounce.is_match(text) {
-        findings.push(json!({
-            "check": "bounce-easing",
-            "severity": "P3",
-            "selector": ":root",
-            "message": "stylesheet declares a bounce or elastic timing keyword",
-            "evidence": { "sheet": true }
-        }));
-    }
-    let curve = Regex::new(r"cubic-bezier\(([^)]*)\)").unwrap();
-    if emit_findings {
-        for captures in curve.captures_iter(text) {
-            let value = format!("cubic-bezier({})", &captures[1]);
-            if is_overshooting(&value) {
-                findings.push(json!({
-                    "check": "bounce-easing",
-                    "severity": "P3",
-                    "selector": ":root",
-                    "message": "stylesheet declares an overshooting cubic-bezier",
-                    "evidence": { "value": value, "sheet": true }
-                }));
-            }
-        }
-    }
-
-    let inventory = json!({
+    json!({
         "durations": counts_to_values(durations),
         "timingFunctions": counts_to_values(timings)
-    });
-    (inventory, findings)
+    })
 }
 
 fn counts_to_values(counts: std::collections::HashMap<String, u64>) -> Vec<Value> {
@@ -2516,7 +2337,8 @@ fn is_overshooting(value: &str) -> bool {
     if lower.contains("bounce") || lower.contains("elastic") {
         return true;
     }
-    let curve = Regex::new(r"cubic-bezier\(([^)]*)\)").unwrap();
+    static CURVE_RE: OnceLock<Regex> = OnceLock::new();
+    let curve = CURVE_RE.get_or_init(|| Regex::new(r"cubic-bezier\(([^)]*)\)").unwrap());
     let Some(captures) = curve.captures(&lower) else {
         return false;
     };
@@ -2529,7 +2351,8 @@ fn is_overshooting(value: &str) -> bool {
 }
 
 fn keyframes(text: &str) -> Vec<Value> {
-    let property = Regex::new(r"([a-z-]+)\s*:").unwrap();
+    static PROP_RE: OnceLock<Regex> = OnceLock::new();
+    let property = PROP_RE.get_or_init(|| Regex::new(r"([a-z-]+)\s*:").unwrap());
     let mut out = Vec::new();
     let mut rest = text;
     while let Some(position) = rest.find("@keyframes") {
@@ -2719,11 +2542,36 @@ fn source_mode(root: &Path, args: &Args) -> Result<i32> {
         args.write_baseline || args.update_baseline,
     )?;
 
+    let rule_sources = resolve_rules_sources(args.rules.as_deref());
+    let rule_sources = expand_rules_sources(&rule_sources)?;
+    let mut rule_source_labels: Vec<String> = rule_sources
+        .iter()
+        .map(|(path, _)| path.display().to_string())
+        .collect();
+    let mut rule_origins: Vec<String> = rule_sources
+        .iter()
+        .map(|(_, origin)| (*origin).to_string())
+        .collect();
+    let rule_paths: Vec<PathBuf> = rule_sources.iter().map(|(path, _)| path.clone()).collect();
+    let (ruleset, _) = if rule_paths.is_empty() {
+        rule_source_labels.push("default-rules.json".to_string());
+        rule_origins.push("default".to_string());
+        load_default_rules(None)?
+    } else {
+        load_rules_with_default(&rule_paths, None)?
+    };
+
     let SourceScan {
-        findings,
+        mut findings,
         suppressed,
         files: scanned,
-    } = source::scan(root, args.source_all)?;
+    } = source::scan(root, args.source_all, ruleset.source_rules())?;
+    findings.retain(|finding| {
+        !args
+            .allow
+            .iter()
+            .any(|allowed| finding["check"].as_str() == Some(allowed))
+    });
 
     let mut by_check: serde_json::Map<String, Value> = serde_json::Map::new();
     for finding in &findings {
@@ -2739,6 +2587,10 @@ fn source_mode(root: &Path, args: &Args) -> Result<i32> {
         "mode": "source",
         "root": root,
         "baseline": Value::Null,
+        "sources": {
+            "rules": rule_source_labels,
+            "rulesOrigin": rule_origins
+        },
         "summary": {
             "findings": findings.len(),
             "suppressed": suppressed,
