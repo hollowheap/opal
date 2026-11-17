@@ -76,7 +76,7 @@ pub(crate) fn sarif_report(report: &Value) -> Value {
         "runs": [{
             "tool": {
                 "driver": {
-                    "name": "ui-probe",
+                    "name": "opal",
                     "version": report["version"],
                     "informationUri": "https://github.com/hollowheap/opal",
                     "rules": rules
@@ -101,8 +101,8 @@ pub(crate) fn markdown_report(report: &Value) -> String {
     let title = report["title"]
         .as_str()
         .or_else(|| report["root"].as_str())
-        .unwrap_or("ui-probe");
-    out.push_str(&format!("# ui-probe: {title}\n\n"));
+        .unwrap_or("opal");
+    out.push_str(&format!("# opal: {title}\n\n"));
     if let Some(url) = report["url"].as_str() {
         out.push_str(&format!("- URL: {url}\n"));
     }
@@ -158,7 +158,7 @@ pub(crate) fn github_report(report: &Value) -> String {
     let mut out = String::new();
     for finding in report["findings"].as_array().cloned().unwrap_or_default() {
         let level = severity_level(&finding);
-        let check = finding["check"].as_str().unwrap_or("ui-probe");
+        let check = finding["check"].as_str().unwrap_or("opal");
         let message = escape_github_message(finding["message"].as_str().unwrap_or(""));
         if let Some(file) = finding["file"].as_str() {
             out.push_str(&format!(

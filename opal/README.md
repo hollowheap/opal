@@ -1,4 +1,4 @@
-# ui-probe
+# opal
 
 Rendered and source UI evidence as JSON. Exit codes: `0` clean, `2` findings, `1` error. Reports carry `schemaVersion: 1`.
 
@@ -68,7 +68,7 @@ Source files accept `opal-ignore <id>` on the matching line, `opal-ignore-next-l
 
 ## Doctor
 
-`ui-probe doctor` validates Chromium, project config, rules, design, and baseline. It exits `1` when a required check fails. `--json` emits machine-readable checks.
+`opal doctor` validates Chromium, project config, rules, design, and baseline. It exits `1` when a required check fails. `--json` emits machine-readable checks.
 
 ## Chromium
 

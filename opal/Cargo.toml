@@ -1,5 +1,5 @@
 [package]
-name = "ui-probe"
+name = "opal"
 version = "0.2.0"
 edition = "2021"
 description = "Render a page in headless Chromium and emit UI evidence as JSON"

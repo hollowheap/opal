@@ -65,7 +65,7 @@ fn main() {
     match run() {
         Ok(code) => std::process::exit(code),
         Err(error) => {
-            eprintln!("ui-probe: {error:#}");
+            eprintln!("opal: {error:#}");
             std::process::exit(1);
         }
     }
@@ -194,7 +194,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
             "--pretty" => pretty = true,
             "--help" | "-h" => {
                 println!(
-                    "usage: ui-probe init [DIR]\n       ui-probe audit URL [options]\n       ui-probe source [DIR] [options]\n       ui-probe pack [--rules PATH] [--json]\n       ui-probe doctor [--json]\n       ui-probe --url URL [options]\n       ui-probe --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n         --baseline PATH --write-baseline --update-baseline --no-baseline\n         --freeze-animations --format json|sarif|markdown|github\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
+                    "usage: opal init [DIR]\n       opal audit URL [options]\n       opal source [DIR] [options]\n       opal pack [--rules PATH] [--json]\n       opal doctor [--json]\n       opal --url URL [options]\n       opal --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n         --baseline PATH --write-baseline --update-baseline --no-baseline\n         --freeze-animations --format json|sarif|markdown|github\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
                 );
                 std::process::exit(0);
             }
@@ -624,7 +624,9 @@ fn doctor_mode(argv: &[String]) -> Result<i32> {
             "--rules" => rules = Some(PathBuf::from(argv.next().context("--rules needs a path")?)),
             "--design" => design = Some(argv.next().context("--design needs a path")?.clone()),
             "--help" | "-h" => {
-                println!("usage: ui-probe doctor [--json] [--chrome PATH] [--rules PATH] [--design PATH]");
+                println!(
+                    "usage: opal doctor [--json] [--chrome PATH] [--rules PATH] [--design PATH]"
+                );
                 return Ok(0);
             }
             other => anyhow::bail!("unknown argument: {other}"),
@@ -742,7 +744,7 @@ fn doctor_mode(argv: &[String]) -> Result<i32> {
     }
 
     let report = json!({
-        "tool": "ui-probe",
+        "tool": "opal",
         "version": env!("CARGO_PKG_VERSION"),
         "schemaVersion": 1,
         "ok": ok,
@@ -771,7 +773,7 @@ fn init_mode(argv: &[String]) -> Result<i32> {
     let mut target = PathBuf::from(".");
     for arg in argv {
         if arg == "--help" || arg == "-h" {
-            println!("usage: ui-probe init [DIR]");
+            println!("usage: opal init [DIR]");
             return Ok(0);
         }
         if arg.starts_with('-') {
@@ -796,27 +798,25 @@ fn init_mode(argv: &[String]) -> Result<i32> {
             .with_context(|| format!("write {}", readme.display()))?;
         println!("created {}", readme.display());
     }
-    println!(
-        "next: fill {} then run ui-probe audit <url>",
-        design.display()
-    );
+    println!("next: fill {} then run opal audit <url>", design.display());
     Ok(0)
 }
 
 const INIT_README: &str = "\
 # opal
 
-- `design.json` holds project design parameters. Every key is optional.
+- `design.json` holds project design parameters. Every key is optional; missing keys fall back to inferred values.
 - `rules.json` is optional. Named rules overlay by id; declarative version 2 rules append, with verbs in, notIn, equals, notEquals, present, and absent.
+- Fixed-threshold rules (e.g. sub-12px text, tight line height, oversized headlines) are advisory defaults; override or disable them in `rules.json`.
 - Rules resolve from `--rules`, the nearest `.opal/rules.json`, then `~/.opal/rules.json`.
 - Design layers from `--design`, the nearest `.opal/design.json`, then `~/.opal/design.json`.
 - `baseline.json` stores accepted finding fingerprints when you run `--write-baseline`.
 
 Run:
 
-    ui-probe audit http://localhost:3000 --theme both --viewport sweep
-    ui-probe source .
-    ui-probe pack
+    opal audit http://localhost:3000 --theme both --viewport sweep
+    opal source .
+    opal pack
 ";
 
 fn pack_mode(argv: &[String]) -> Result<i32> {
@@ -830,7 +830,7 @@ fn pack_mode(argv: &[String]) -> Result<i32> {
             }
             "--json" => json_output = true,
             "--help" | "-h" => {
-                println!("usage: ui-probe pack [--rules PATH] [--json]");
+                println!("usage: opal pack [--rules PATH] [--json]");
                 return Ok(0);
             }
             other => anyhow::bail!("unknown argument: {other}"),
@@ -1798,7 +1798,7 @@ fn build_report(
     }
 
     json!({
-        "tool": "ui-probe",
+        "tool": "opal",
         "version": env!("CARGO_PKG_VERSION"),
         "schemaVersion": 1,
         "sources": {
@@ -2581,7 +2581,7 @@ fn source_mode(root: &Path, args: &Args) -> Result<i32> {
     }
 
     let mut report = json!({
-        "tool": "ui-probe",
+        "tool": "opal",
         "version": env!("CARGO_PKG_VERSION"),
         "schemaVersion": 1,
         "mode": "source",

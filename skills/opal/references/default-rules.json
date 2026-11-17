@@ -1961,6 +1961,14 @@
           {
             "equals": [
               {
+                "field": "visible"
+              },
+              true
+            ]
+          },
+          {
+            "equals": [
+              {
                 "field": "interactive"
               },
               true
@@ -1980,6 +1988,14 @@
                 "field": "name"
               },
               ""
+            ]
+          },
+          {
+            "equals": [
+              {
+                "field": "hiddenBy"
+              },
+              null
             ]
           }
         ]
@@ -6025,6 +6041,22 @@
       },
       "message": "visible modal or dialog interrupts initial page load",
       "severity": "P3",
+      "layer": "layout"
+    },
+    {
+      "id": "aria-expanded-controls",
+      "name": "aria-expanded-controls",
+      "selector": "[aria-expanded]",
+      "operator": "all",
+      "properties": {
+        "@aria-controls": [
+          {
+            "present": true
+          }
+        ]
+      },
+      "message": "aria-expanded should reference its controlled element",
+      "severity": "advisory",
       "layer": "layout"
     }
   ],

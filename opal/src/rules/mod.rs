@@ -535,6 +535,8 @@ fn default_pack_data() -> Result<Value> {
         candidates.push(PathBuf::from(path));
     }
     candidates.push(relative.to_path_buf());
+    candidates.push(PathBuf::from("scripts/rules.json"));
+    candidates.push(PathBuf::from("scripts/default-rules.json"));
     if let Ok(executable) = std::env::current_exe() {
         let mut directory = executable.parent();
         for _ in 0..6 {
@@ -542,6 +544,8 @@ fn default_pack_data() -> Result<Value> {
                 break;
             };
             candidates.push(current.join(relative));
+            candidates.push(current.join("rules.json"));
+            candidates.push(current.join("default-rules.json"));
             directory = current.parent();
         }
     }

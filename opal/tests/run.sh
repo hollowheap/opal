@@ -3,15 +3,15 @@ set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
-bin=${UI_PROBE_BIN:-$root/ui-probe/target/debug/ui-probe}
+bin=${UI_PROBE_BIN:-$root/opal/target/debug/opal}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 export HOME="$tmp/home"
 mkdir -p "$HOME"
 
 if [ ! -x "$bin" ]; then
-  echo "missing ui-probe binary: $bin" >&2
-  echo "build it with: cargo build --manifest-path ui-probe/Cargo.toml" >&2
+  echo "missing opal binary: $bin" >&2
+  echo "build it with: cargo build --manifest-path opal/Cargo.toml" >&2
   exit 1
 fi
 
@@ -110,7 +110,7 @@ design_url=$(file_url design-drift.html)
 dtcg="$here/design-dtcg.json"
 pack="$root/skills/opal/references/default-rules.json"
 jqr default-pack-scrub "$pack" '[.rules[].id] | index("gpt-thin-border-wide-shadow") | not'
-jqr default-pack-count "$pack" '(.rules | length == 78) and (.sourceRules | length == 10)'
+jqr default-pack-count "$pack" '(.rules | length == 79) and (.sourceRules | length == 10)'
 jqr default-pack-fixed "$pack" '[.rules[].id] | (index("contrast") != null) and (index("heading-spacing-relation") != null)'
 
 run clean 0 "$tmp/clean.json" --url "$clean_url" --no-sandbox --pretty
@@ -394,7 +394,7 @@ run format-sarif 2 "$tmp/sarif.json" --url "$(file_url cards.html)" --no-sandbox
 jqr format-sarif "$tmp/sarif.json" '.version == "2.1.0" and (.runs[0].results | length > 0) and (.runs[0].tool.driver.rules | length > 0) and ([.runs[0].results[].ruleId] | index("nested-cards") != null)'
 
 run format-markdown 2 "$tmp/format.md" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-error.json" --format markdown
-file_has format-markdown "$tmp/format.md" "# ui-probe:"
+file_has format-markdown "$tmp/format.md" "# opal:"
 file_has format-markdown "$tmp/format.md" "nested-cards"
 
 run format-github 2 "$tmp/format.github" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-error.json" --format github
@@ -557,5 +557,5 @@ EOF
 run invalid-source-regex 1 "$tmp/invalid-source-regex.out" source "$tmp/source-custom" --rules "$tmp/invalid-source-regex.json"
 err_has invalid-source-regex "rules:"
 
-echo "ui-probe tests: $pass passed, $fail failed"
+echo "opal tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -2,73 +2,54 @@
 name: opal
 description: UI craft: DTCG tokens, wireframing, and rendered audits.
 license: MIT
-compatibility: Requires Chromium and ui-probe.
+compatibility: Requires Chromium and opal.
 disable-model-invocation: true
 ---
 
 # Opal
 
-Use when the diff renders or changes a user interface.
+## Scope
 
-## Authoring
-
-- Decompose compound primitives into parts (`Root`, `Trigger`, `Portal`, `Content`, `Close`); use context instead of prop drilling.
-- Model async state as a strict union: `idle`, `loading`, `success`, `empty`, `error`; cancel stale work with `AbortController`.
-- Wire WAI-ARIA roles and state (`aria-expanded`, `aria-controls`), keyboard navigation, and visible focus.
-- Support `asChild` composition and ref forwarding; merge classes with `cn()`.
-- Animate only compositor properties (`transform`, `opacity`); respect `prefers-reduced-motion`.
+- Covers: UI composition, design specificity, rendered audits, and motion, typography, and polish checks when a diff renders or changes a user interface.
+- Excludes: backend-only changes, non-visual behavior, and unrendered visual claims.
 
 ## Design specificity
 
-- Decide whether this composition could belong to an unrelated product unchanged; if yes, report it.
-- Check hierarchy, information architecture, cognitive load, and whether the primary action is findable within seconds.
-- Check brief coverage: every requirement in `artifacts/ui-design.md` is present and findable within seconds; list shipped features the brief never asked for.
-- Compare against `artifacts/ui-design.md` when present; treat its tokens and constraints as authoritative.
+- Treat `DESIGN.md` as authoritative when present; infer tokens, density, typography, and constraints from the diff otherwise.
+- Apply the critique and distill actions to judge product specificity and brief coverage.
 
 ## Anti-patterns
 
 The rules pack reports slop patterns. Treat its findings as advisory, not bans: a documented brief can earn any pattern, and the finding must name the earning line.
 
-## Heuristics
-
-- Check visibility of system status, match to the user's world, user control, consistency, error prevention, recognition over recall, flexibility, minimalist design, error recovery, and help.
-- Flag a crowd of primary choices, hidden state, working-memory load, and unchunked data.
-- Report severity as blocking use, blocking the primary task, degrading trust or speed, or polish.
-
 ## Setup
 
-Run `scripts/compile.sh` once per machine. Run `~/.opal/bin/ui-probe init` once per project. Fill `.opal/design.json`; add `.opal/rules.json` only to override named rules or add declarative rules. Run `~/.opal/bin/ui-probe doctor` when setup fails. Then run `~/.opal/bin/ui-probe audit <url> --theme both --viewport sweep`.
+Run `scripts/compile.sh` once per machine. Run `scripts/opal init` once per project, fill `.opal/design.json`, use `.opal/rules.json` only to override named rules or add declarative rules, then run `scripts/opal audit <url> --theme both --viewport sweep`. Run `scripts/opal doctor` when setup fails. See `references/README.md` for rule and design resolution, baselines, and suppressions.
 
-Rules resolve from `--rules`, the nearest `.opal/rules.json`, then `~/.opal/rules.json`. Named rules overlay by id; declarative rules append. The report lists every loaded pack under `sources.rules` and tags rule findings with `ruleSource` and `packSource`. Design layers `--design`, the nearest `.opal/design.json`, then `~/.opal/design.json`; higher layers override matching token paths, and the report lists the files under `sources.design`. Use `--write-baseline` to accept current findings; later runs report only new fingerprints. Inline suppressions use `opal-ignore` comments in source and `data-opal-ignore` in rendered pages.
+## Evidence
 
-## Audit
+Every action checks both channels before it judges the work:
 
-Read `artifacts/ui-design.md` when present; use its tokens, density, typography, and constraints as the design source. If it is absent, infer them from the diff.
+- Source: run `scripts/opal source .` and read `references/source.md`.
+- Computed: run `scripts/opal audit <url> --theme both --viewport sweep` and read `references/audit.md`.
 
-Run `~/.opal/bin/ui-probe source .` for source patterns in changed UI files before reading the diff. Treat matches as evidence, not findings; verify each match in context.
+Without a browser, inspect supplied screenshots and list every computed check as unverified.
 
-Run `~/.opal/bin/ui-probe audit <url> [flags]` before judging. A rendered review without a probe run is incomplete. The probe renders desktop and mobile viewports in light and dark themes and samples hover and focus states; it reports findings derived from rendered geometry and computed colors, plus a candidate list and tab order, as JSON. Page-health, geometry, material, typography, and motion advisories carry measured evidence; treat them as review prompts, not bans. Use `--expand` to open each ARIA disclosure one at a time and report per-state deltas. Read the report for thresholds and evidence. Without the tool or a browser, inspect supplied screenshots and list every unrendered check under unverified.
+## Actions
 
-Exercise preload, loaded, empty, error, disabled, collapsed, and expanded; snapshot only the states the diff touches.
+Load actions by entry condition; each consumes both evidence channels and resumes at `## Rules`:
 
-- Treat `console-error`, `page-error`, and `network-error` findings as real defects; warnings are advisory.
-- Use `--freeze-animations` when motion makes geometry unstable, and rerun without it for motion checks.
-
-- Every interactive control needs an accessible name, visible focus indicator, and keyboard trigger.
-- Widget roles carry their states: `aria-expanded`, `aria-controls`, `aria-selected`, `aria-pressed`, `aria-current`. Async status uses a live region. No ARIA overrides native semantics without cause.
-- Touch targets and text contrast meet the thresholds in the bundled rules pack and the report evidence.
-- Body measure, tracking, and overflow stay within the report limits; no text overflows its container. Display sizes follow `artifacts/ui-design.md`, not a fixed ceiling.
-- Compare computed padding, margin, and gap against the density profile.
-- Declare elevation once, border or shadow. Flag a hairline border under a wide soft shadow as a ghost card. Match radii to `artifacts/ui-design.md`; without a spec, flag mixed radii on comparable surfaces, not a numeric range. Keep radius units: a percentage never equals the same number of pixels.
-- Theme selection, caret, scrollbars, focus rings, underline offset, and tabular numerals come from the palette; browser defaults belong to no design system.
-- Resolve computed colors across themes; report off-palette nodes.
-- Never suppress focus rings without an equivalent visible focus ring.
-- Never introduce raw color literals in components; fix token mappings.
-- Cite source and rendered evidence: viewport, theme, input method, and what was not exercised.
+- Design clarity, hierarchy, or product specificity: `references/critique.md`.
+- Motion change or motion finding: `references/animate.md`.
+- Typography change or display-size finding: `references/typeset.md`.
+- Scope creep or repeated copy: `references/distill.md`.
+- Loading, cache, network, or health finding: `references/optimize.md`.
+- Focus, hover, spacing, or theme finding: `references/polish.md`.
 
 ## Rules
 
 - Primitives stay headless and unstyled by default; styles merge via `cn()`.
 - Never use disjoint flags (`isLoading && isError`); use a strict discriminated union.
+- Report severity as blocking use, blocking the primary task, degrading trust or speed, or polish.
 - Write findings with `file:line` and a remediation diff to `artifacts/review/ui-<topic>.md`.
 - Verify: zero off-palette colors, zero accessibility violations, and conformance to the target density profile.

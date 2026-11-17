@@ -17,10 +17,10 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ui-probe
-      - run: cargo fmt --manifest-path ui-probe/Cargo.toml --check
-      - run: cargo clippy --manifest-path ui-probe/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --manifest-path ui-probe/Cargo.toml
+          workspaces: opal
+      - run: cargo fmt --manifest-path opal/Cargo.toml --check
+      - run: cargo clippy --manifest-path opal/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path opal/Cargo.toml
 
   integration:
     runs-on: ubuntu-latest
@@ -29,11 +29,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ui-probe
+          workspaces: opal
       - uses: browser-actions/setup-chrome@v1
         id: chrome
-      - run: cargo build --manifest-path ui-probe/Cargo.toml
-      - run: UI_PROBE_CHROME="${{ steps.chrome.outputs.chrome-path }}" bash ui-probe/tests/run.sh
+      - run: cargo build --manifest-path opal/Cargo.toml
+      - run: UI_PROBE_CHROME="${{ steps.chrome.outputs.chrome-path }}" bash opal/tests/run.sh
 
   flake:
     runs-on: ubuntu-latest

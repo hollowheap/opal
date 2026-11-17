@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-mkdir -p "$HOME/.opal/bin"
-cargo build --release --manifest-path "$root/ui-probe/Cargo.toml"
-install -m755 "$root/ui-probe/target/release/ui-probe" "$HOME/.opal/bin/ui-probe"
-install -m644 "$root/skills/opal/references/default-rules.json" "$HOME/.opal/rules.json"
-echo "installed $HOME/.opal/bin/ui-probe"
+cargo build --release --manifest-path "$root/opal/Cargo.toml"
+install -m755 "$root/opal/target/release/opal" "$root/scripts/opal"
+install -m644 "$root/skills/opal/references/default-rules.json" "$root/scripts/rules.json"
+echo "installed $root/scripts/opal"

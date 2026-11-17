@@ -6,6 +6,10 @@ A version 2 rule carries a selector, optional ancestor and exception conditions,
 
 Names that resolve to no default rule, alias baseline, or declarative rule body are reported as coverage gaps, never skipped. The three former dead names `aphoristic-cadence`, `edge-flush-cards`, and `script-error` have no implementation and are not part of the floor.
 
+## Resolution
+
+Rules resolve from `--rules`, the nearest `.opal/rules.json`, then `~/.opal/rules.json`. Named rules overlay by id; declarative rules append. The report lists packs under `sources.rules` and tags findings with `ruleSource` and `packSource`. Design layers `--design`, the nearest `.opal/design.json`, then `~/.opal/design.json`; higher layers override matching token paths and list files under `sources.design`. `--write-baseline` accepts current findings; later runs report only new fingerprints. Inline suppressions use `opal-ignore` in source and `data-opal-ignore` in rendered pages.
+
 ## Default and optional packs
 
 All 78 `.rules` entries and 10 `.sourceRules` entries in `default-rules.json` are declarative. The structural `no-gradient-text` rule is declarative too. A project can see the whole floor, disable a rule, or override its severity and layer.

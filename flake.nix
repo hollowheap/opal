@@ -1,5 +1,5 @@
 {
-  description = "opal: UI craft skill and ui-probe";
+  description = "opal: UI craft skill and opal CLI";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -33,16 +33,16 @@
             tar -xzf ${playwrightCore} -C $out
           '';
 
-          ui-probe = pkgs.rustPlatform.buildRustPackage {
-            pname = "ui-probe";
+          opal = pkgs.rustPlatform.buildRustPackage {
+            pname = "opal";
             version = "0.2.0";
 
             src = pkgs.lib.cleanSourceWith {
-              src = ./ui-probe;
+              src = ./opal;
               filter = path: _type: builtins.baseNameOf path != "target";
             };
 
-            cargoLock.lockFile = ./ui-probe/Cargo.lock;
+            cargoLock.lockFile = ./opal/Cargo.lock;
 
             UI_PROBE_DEFAULT_RULES = ./skills/opal/references/default-rules.json;
 
@@ -52,7 +52,7 @@
             ];
 
             postInstall = ''
-              wrapProgram $out/bin/ui-probe \
+              wrapProgram $out/bin/opal \
                 --set UI_PROBE_CHROME ${pkgs.chromium}/bin/chromium \
                 --set PLAYWRIGHT_NODE_EXE ${pkgs.nodejs}/bin/node \
                 --set PLAYWRIGHT_CLI_JS ${playwrightDriver}/package/cli.js \
@@ -62,13 +62,13 @@
             meta = {
               description = "Render a page in headless Chromium and emit UI evidence as JSON";
               license = pkgs.lib.licenses.mit;
-              mainProgram = "ui-probe";
+              mainProgram = "opal";
             };
           };
         in
         {
-          inherit ui-probe;
-          default = ui-probe;
+          inherit opal;
+          default = opal;
           rules = pkgs.writeText "opal-rules.json" (
             builtins.readFile ./skills/opal/references/default-rules.json
           );
@@ -77,7 +77,7 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          inputsFrom = [ self.packages.${pkgs.system}.ui-probe ];
+          inputsFrom = [ self.packages.${pkgs.system}.opal ];
           packages = [
             pkgs.cargo
             pkgs.rustc
