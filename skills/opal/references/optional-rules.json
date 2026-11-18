@@ -4,8 +4,8 @@
   "pack": "opal-optional",
   "rules": [
     {
-      "id": "hairline-border-wide-shadow",
-      "name": "hairline-border-wide-shadow",
+      "id": "gpt-thin-border-wide-shadow",
+      "name": "gpt-thin-border-wide-shadow",
       "selector": "*",
       "operator": "all",
       "params": {

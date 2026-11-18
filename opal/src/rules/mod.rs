@@ -528,7 +528,18 @@ pub(crate) fn load_rules(
     load_rules_with_default(sources, design)
 }
 
-fn default_pack_data() -> Result<Value> {
+pub(crate) fn load_pack(
+    sources: &[PathBuf],
+    design: Option<&DesignSpec>,
+) -> Result<(RuleSet, Vec<Value>)> {
+    let Some(mut pack) = merge_rules(sources)? else {
+        anyhow::bail!("no rules pack found");
+    };
+    pack["version"] = json!(2);
+    parse_rules(&pack, design)
+}
+
+pub(crate) fn default_pack_data() -> Result<Value> {
     let relative = Path::new("skills/opal/references/default-rules.json");
     let mut candidates = Vec::new();
     if let Ok(path) = std::env::var("UI_PROBE_DEFAULT_RULES") {

@@ -132,131 +132,6 @@
       "when": {
         "all": [
           {
-            "equals": [
-              {
-                "field": "visible"
-              },
-              true
-            ]
-          },
-          {
-            "equals": [
-              {
-                "field": "hasText"
-              },
-              true
-            ]
-          },
-          {
-            "gte": [
-              {
-                "field": "textLength"
-              },
-              120
-            ]
-          },
-          {
-            "gt": [
-              {
-                "field": "chWidth"
-              },
-              0
-            ]
-          },
-          {
-            "gt": [
-              {
-                "div": [
-                  {
-                    "sub": [
-                      {
-                        "field": "rect.w"
-                      },
-                      {
-                        "add": [
-                          {
-                            "field": "padding.1"
-                          },
-                          {
-                            "field": "padding.3"
-                          }
-                        ]
-                      }
-                    ]
-                  },
-                  {
-                    "field": "chWidth"
-                  }
-                ]
-              },
-              {
-                "param": "maxCh"
-              }
-            ]
-          }
-        ]
-      },
-      "message": "line length above the pack limit",
-      "id": "line-length",
-      "name": "line-length",
-      "params": {
-        "maxCh": 75
-      },
-      "severity": "advisory",
-      "layer": "layout"
-    },
-    {
-      "selector": "*",
-      "operator": "all",
-      "when": {
-        "all": [
-          {
-            "gte": [
-              {
-                "field": "fontSize"
-              },
-              16
-            ]
-          },
-          {
-            "number": {
-              "field": "letterSpacing"
-            }
-          },
-          {
-            "lt": [
-              {
-                "div": [
-                  {
-                    "field": "letterSpacing"
-                  },
-                  {
-                    "field": "fontSize"
-                  }
-                ]
-              },
-              {
-                "param": "minEm"
-              }
-            ]
-          }
-        ]
-      },
-      "message": "tracking below the pack floor",
-      "id": "extreme-negative-tracking",
-      "name": "extreme-negative-tracking",
-      "params": {
-        "minEm": -0.04
-      },
-      "severity": "advisory",
-      "layer": "layout"
-    },
-    {
-      "selector": "*",
-      "operator": "all",
-      "when": {
-        "all": [
-          {
             "gte": [
               {
                 "nthLargest": [
@@ -350,52 +225,8 @@
       "id": "marketing-buzzword"
     },
     {
-      "id": "bounce-easing",
-      "name": "bounce-easing",
-      "scope": "page",
-      "when": {
-        "any": [
-          {
-            "gt": [
-              {
-                "countOf": [
-                  {
-                    "field": "page.elements"
-                  },
-                  {
-                    "any": [
-                      {
-                        "overshooting": {
-                          "field": "transitionTimingFunction"
-                        }
-                      },
-                      {
-                        "overshooting": {
-                          "field": "animationTimingFunction"
-                        }
-                      }
-                    ]
-                  }
-                ]
-              },
-              0
-            ]
-          },
-          {
-            "overshooting": {
-              "field": "sheet.text"
-            }
-          }
-        ]
-      },
-      "message": "overshooting easing curve",
-      "severity": "advisory",
-      "layer": "sheet",
-      "params": {}
-    },
-    {
-      "id": "rebuttal-cadence",
-      "name": "rebuttal-cadence",
+      "id": "aphoristic-cadence",
+      "name": "aphoristic-cadence",
       "scope": "page",
       "when": {
         "gte": [
@@ -483,7 +314,7 @@
       }
     },
     {
-      "name": "dismissive-copy",
+      "name": "theater-slop-phrase",
       "scope": "page",
       "when": {
         "matches": [
@@ -496,11 +327,11 @@
       "message": "copy dismisses a real concern as theater",
       "severity": "advisory",
       "layer": "content",
-      "id": "dismissive-copy"
+      "id": "theater-slop-phrase"
     },
     {
-      "id": "accent-border-rounded",
-      "name": "accent-border-rounded",
+      "id": "border-accent-on-rounded",
+      "name": "border-accent-on-rounded",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -537,8 +368,8 @@
       "layer": "layout"
     },
     {
-      "id": "clipped-escape-child",
-      "name": "clipped-escape-child",
+      "id": "clipped-overflow-container",
+      "name": "clipped-overflow-container",
       "scope": "page",
       "when": {
         "pairAny": [
@@ -713,7 +544,7 @@
       "layer": "layout"
     },
     {
-      "name": "clipped-text",
+      "name": "text-overflow",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -759,252 +590,11 @@
       "message": "text is clipped by its container",
       "severity": "P2",
       "layer": "layout",
-      "id": "clipped-text"
+      "id": "text-overflow"
     },
     {
-      "id": "colored-halo-shadow",
-      "name": "colored-halo-shadow",
-      "selector": "*",
-      "operator": "all",
-      "when": {
-        "all": [
-          {
-            "not": {
-              "shadowInset": {
-                "field": "focusStyle.boxShadow"
-              }
-            }
-          },
-          {
-            "shadowChromatic": {
-              "field": "focusStyle.boxShadow"
-            }
-          },
-          {
-            "gt": [
-              {
-                "shadowBlur": {
-                  "field": "focusStyle.boxShadow"
-                }
-              },
-              0
-            ]
-          },
-          {
-            "any": [
-              {
-                "lt": [
-                  {
-                    "shadowOffset": {
-                      "field": "focusStyle.boxShadow"
-                    }
-                  },
-                  2
-                ]
-              },
-              {
-                "dark": {
-                  "get": [
-                    {
-                      "firstOf": [
-                        {
-                          "field": "page.elements"
-                        },
-                        {
-                          "equals": [
-                            {
-                              "field": "tag"
-                            },
-                            "body"
-                          ]
-                        }
-                      ]
-                    },
-                    "backgroundColor"
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "message": "a chromatic blurred shadow reads as a halo",
-      "severity": "P3",
-      "layer": "sheet"
-    },
-    {
-      "id": "compressed-type-scale",
-      "name": "compressed-type-scale",
-      "scope": "page",
-      "when": {
-        "groupAny": [
-          {
-            "filter": [
-              {
-                "field": "page.elements"
-              },
-              {
-                "all": [
-                  {
-                    "in": [
-                      {
-                        "field": "tag"
-                      },
-                      [
-                        "h1",
-                        "h2",
-                        "h3",
-                        "p"
-                      ]
-                    ]
-                  },
-                  {
-                    "gt": [
-                      {
-                        "field": "fontSize"
-                      },
-                      0
-                    ]
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "field": "parentIndex"
-          },
-          {
-            "all": [
-              {
-                "gte": [
-                  {
-                    "length": {
-                      "sortNumbers": {
-                        "unique": {
-                          "map": [
-                            {
-                              "field": "values"
-                            },
-                            {
-                              "field": "fontSize"
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  },
-                  2
-                ]
-              },
-              {
-                "adjacentAll": [
-                  {
-                    "sortNumbers": {
-                      "unique": {
-                        "map": [
-                          {
-                            "field": "values"
-                          },
-                          {
-                            "field": "fontSize"
-                          }
-                        ]
-                      }
-                    }
-                  },
-                  {
-                    "lt": [
-                      {
-                        "div": [
-                          {
-                            "field": "right"
-                          },
-                          {
-                            "field": "left"
-                          }
-                        ]
-                      },
-                      1.25
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "message": "heading and body sizes never separate by 1.25x",
-      "severity": "P3",
-      "layer": "content"
-    },
-    {
-      "name": "continuous-scroller",
-      "selector": "*",
-      "operator": "all",
-      "when": {
-        "any": [
-          {
-            "matches": [
-              {
-                "field": "animationName"
-              },
-              "(?i)ticker"
-            ]
-          },
-          {
-            "all": [
-              {
-                "notEquals": [
-                  {
-                    "field": "animationName"
-                  },
-                  "none"
-                ]
-              },
-              {
-                "notEquals": [
-                  {
-                    "field": "animationDuration"
-                  },
-                  "0s"
-                ]
-              },
-              {
-                "contains": [
-                  {
-                    "field": "animationIterationCount"
-                  },
-                  "infinite"
-                ]
-              },
-              {
-                "contains": [
-                  {
-                    "field": "overflow"
-                  },
-                  "hidden"
-                ]
-              },
-              {
-                "gt": [
-                  {
-                    "field": "overflowX"
-                  },
-                  0
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "message": "content scrolls continuously and hides part of itself",
-      "severity": "P3",
-      "layer": "sheet",
-      "id": "continuous-scroller"
-    },
-    {
-      "id": "contrast",
-      "name": "contrast",
+      "id": "low-contrast",
+      "name": "low-contrast",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -1123,79 +713,7 @@
       "layer": "layout"
     },
     {
-      "id": "cream-canvas",
-      "name": "cream-canvas",
-      "selector": "body",
-      "operator": "all",
-      "when": {
-        "all": [
-          {
-            "gt": [
-              {
-                "red": {
-                  "field": "backgroundColor"
-                }
-              },
-              200
-            ]
-          },
-          {
-            "gt": [
-              {
-                "green": {
-                  "field": "backgroundColor"
-                }
-              },
-              180
-            ]
-          },
-          {
-            "gt": [
-              {
-                "blue": {
-                  "field": "backgroundColor"
-                }
-              },
-              140
-            ]
-          },
-          {
-            "lt": [
-              {
-                "blue": {
-                  "field": "backgroundColor"
-                }
-              },
-              {
-                "sub": [
-                  {
-                    "red": {
-                      "field": "backgroundColor"
-                    }
-                  },
-                  8
-                ]
-              }
-            ]
-          },
-          {
-            "lt": [
-              {
-                "chroma": {
-                  "field": "backgroundColor"
-                }
-              },
-              80
-            ]
-          }
-        ]
-      },
-      "message": "the page uses a warm cream or beige canvas",
-      "severity": "P3",
-      "layer": "layout"
-    },
-    {
-      "name": "decorative-blinking-caret",
+      "name": "blinking-cursor",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -1273,10 +791,10 @@
       "message": "a blinking caret is animated where no input exists",
       "severity": "P3",
       "layer": "sheet",
-      "id": "decorative-blinking-caret"
+      "id": "blinking-cursor"
     },
     {
-      "name": "excess-letter-spacing",
+      "name": "wide-tracking",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -1324,7 +842,7 @@
       "message": "letter spacing is excessive on body text",
       "severity": "P3",
       "layer": "content",
-      "id": "excess-letter-spacing"
+      "id": "wide-tracking"
     },
     {
       "id": "focus-hidden",
@@ -1350,7 +868,7 @@
       "layer": "layout"
     },
     {
-      "name": "grid-line-background",
+      "name": "codex-grid-background",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -1389,11 +907,11 @@
       "message": "a decorative grid is tiled from hairline gradients",
       "severity": "P3",
       "layer": "sheet",
-      "id": "grid-line-background"
+      "id": "codex-grid-background"
     },
     {
-      "id": "heading-skip",
-      "name": "heading-skip",
+      "id": "skipped-heading",
+      "name": "skipped-heading",
       "scope": "page",
       "when": {
         "adjacentAny": [
@@ -1484,8 +1002,8 @@
       "id": "heading-spacing-relation"
     },
     {
-      "id": "hidden-text-share",
-      "name": "hidden-text-share",
+      "id": "content-hidden-at-rest",
+      "name": "content-hidden-at-rest",
       "scope": "page",
       "when": {
         "all": [
@@ -1734,7 +1252,7 @@
       "layer": "content"
     },
     {
-      "name": "image-source-missing",
+      "name": "broken-image",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -1792,10 +1310,10 @@
       "message": "image has no usable source",
       "severity": "P2",
       "layer": "content",
-      "id": "image-source-missing"
+      "id": "broken-image"
     },
     {
-      "name": "irregular-clip-path",
+      "name": "organic-clip-path",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -1838,10 +1356,10 @@
       "message": "a complex clip path approximates a torn or blob edge",
       "severity": "P3",
       "layer": "sheet",
-      "id": "irregular-clip-path"
+      "id": "organic-clip-path"
     },
     {
-      "name": "justified-narrow-text",
+      "name": "justified-text",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -1895,10 +1413,10 @@
       "message": "justified text runs in a narrow column without hyphenation",
       "severity": "P3",
       "layer": "content",
-      "id": "justified-narrow-text"
+      "id": "justified-text"
     },
     {
-      "name": "literal-uppercase-passage",
+      "name": "all-caps-body",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -1934,7 +1452,7 @@
       "message": "a long passage is written in literal uppercase",
       "severity": "P3",
       "layer": "content",
-      "id": "literal-uppercase-passage"
+      "id": "all-caps-body"
     },
     {
       "id": "missing-lang",
@@ -2006,8 +1524,8 @@
       "id": "missing-name"
     },
     {
-      "id": "numeric-section-index",
-      "name": "numeric-section-index",
+      "id": "numbered-section-labels",
+      "name": "numbered-section-labels",
       "scope": "page",
       "when": {
         "gte": [
@@ -2064,8 +1582,8 @@
       "layer": "content"
     },
     {
-      "id": "opening-column-overrun",
-      "name": "opening-column-overrun",
+      "id": "first-viewport-column-overflow",
+      "name": "first-viewport-column-overflow",
       "scope": "page",
       "when": {
         "all": [
@@ -2263,8 +1781,8 @@
       "layer": "layout"
     },
     {
-      "id": "overlapping-copy",
-      "name": "overlapping-copy",
+      "id": "text-occlusion",
+      "name": "text-occlusion",
       "scope": "page",
       "when": {
         "pairAny": [
@@ -2571,70 +2089,8 @@
       "layer": "layout"
     },
     {
-      "name": "oversized-headline",
-      "selector": "*",
-      "operator": "all",
-      "when": {
-        "all": [
-          {
-            "in": [
-              {
-                "field": "tag"
-              },
-              [
-                "h1",
-                "h2",
-                "h3"
-              ]
-            ]
-          },
-          {
-            "gte": [
-              {
-                "length": {
-                  "field": "text"
-                }
-              },
-              40
-            ]
-          },
-          {
-            "any": [
-              {
-                "gte": [
-                  {
-                    "field": "fontSize"
-                  },
-                  48
-                ]
-              },
-              {
-                "gt": [
-                  {
-                    "field": "rect.h"
-                  },
-                  {
-                    "mul": [
-                      {
-                        "field": "page.viewport.height"
-                      },
-                      0.3
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "message": "a full headline is set at display size and dominates the viewport",
-      "severity": "P2",
-      "layer": "content",
-      "id": "oversized-headline"
-    },
-    {
-      "id": "oversized-italic-serif",
-      "name": "oversized-italic-serif",
+      "id": "italic-serif-display",
+      "name": "italic-serif-display",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -2704,8 +2160,8 @@
       "id": "page-overflow"
     },
     {
-      "id": "pill-eyebrow-label",
-      "name": "pill-eyebrow-label",
+      "id": "hero-eyebrow-chip",
+      "name": "hero-eyebrow-chip",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -2809,8 +2265,8 @@
       "id": "positive-tabindex"
     },
     {
-      "id": "primitive-svg-scene",
-      "name": "primitive-svg-scene",
+      "id": "shape-assembled-illustration",
+      "name": "shape-assembled-illustration",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -2854,7 +2310,7 @@
       "layer": "content"
     },
     {
-      "name": "pulsing-status-dot",
+      "name": "pulsing-dot",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -2974,11 +2430,11 @@
       "message": "a small pulsing dot decorates the page without marking live state",
       "severity": "P3",
       "layer": "sheet",
-      "id": "pulsing-status-dot"
+      "id": "pulsing-dot"
     },
     {
-      "id": "radial-background-wash",
-      "name": "radial-background-wash",
+      "id": "radial-halo",
+      "name": "radial-halo",
       "scope": "page",
       "when": {
         "gt": [
@@ -3014,8 +2470,8 @@
       "layer": "sheet"
     },
     {
-      "id": "radial-spotlight",
-      "name": "radial-spotlight",
+      "id": "radial-spotlight-glow",
+      "name": "radial-spotlight-glow",
       "scope": "page",
       "when": {
         "all": [
@@ -3110,8 +2566,8 @@
       "layer": "sheet"
     },
     {
-      "id": "reflex-font-choice",
-      "name": "reflex-font-choice",
+      "id": "overused-font",
+      "name": "overused-font",
       "scope": "page",
       "when": {
         "groupAny": [
@@ -3181,8 +2637,8 @@
       "layer": "content"
     },
     {
-      "id": "repeated-container-copy",
-      "name": "repeated-container-copy",
+      "id": "repeated-container-text",
+      "name": "repeated-container-text",
       "scope": "page",
       "when": {
         "groupAny": [
@@ -3261,7 +2717,7 @@
       "layer": "content"
     },
     {
-      "name": "repeating-stripe-surface",
+      "name": "repeating-stripes-gradient",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -3275,7 +2731,7 @@
       "message": "repeating gradient stripes decorate a surface",
       "severity": "P3",
       "layer": "sheet",
-      "id": "repeating-stripe-surface"
+      "id": "repeating-stripes-gradient"
     },
     {
       "id": "row-elevation-conflict",
@@ -3382,8 +2838,8 @@
       "layer": "layout"
     },
     {
-      "id": "scroller-edge-flush",
-      "name": "scroller-edge-flush",
+      "id": "edge-flush-cards",
+      "name": "edge-flush-cards",
       "scope": "page",
       "when": {
         "groupAny": [
@@ -3656,7 +3112,7 @@
       "layer": "layout"
     },
     {
-      "name": "short-heading-tail",
+      "name": "unbalanced-heading",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -3709,10 +3165,10 @@
       "message": "a heading wraps with a much shorter last line",
       "severity": "P3",
       "layer": "content",
-      "id": "short-heading-tail"
+      "id": "unbalanced-heading"
     },
     {
-      "name": "short-last-line",
+      "name": "straggler",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -3775,7 +3231,7 @@
       "message": "the last line holds a single short word",
       "severity": "P3",
       "layer": "content",
-      "id": "short-last-line"
+      "id": "straggler"
     },
     {
       "id": "sibling-text-collision",
@@ -3991,7 +3447,7 @@
       "layer": "layout"
     },
     {
-      "name": "sub-11px-control-text",
+      "name": "undersized-ui-text",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -4061,10 +3517,10 @@
       "message": "UI text is below its floor",
       "severity": "P2",
       "layer": "content",
-      "id": "sub-11px-control-text"
+      "id": "undersized-ui-text"
     },
     {
-      "name": "sub-12px-body",
+      "name": "tiny-text",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -4100,232 +3556,7 @@
       "message": "body text is below 12px",
       "severity": "P2",
       "layer": "content",
-      "id": "sub-12px-body"
-    },
-    {
-      "id": "synthetic-purple-palette",
-      "name": "synthetic-purple-palette",
-      "scope": "page",
-      "when": {
-        "all": [
-          {
-            "dark": {
-              "get": [
-                {
-                  "firstOf": [
-                    {
-                      "field": "page.elements"
-                    },
-                    {
-                      "equals": [
-                        {
-                          "field": "tag"
-                        },
-                        "body"
-                      ]
-                    }
-                  ]
-                },
-                "backgroundColor"
-              ]
-            }
-          },
-          {
-            "any": [
-              {
-                "all": [
-                  {
-                    "gt": [
-                      {
-                        "countOf": [
-                          {
-                            "field": "page.elements"
-                          },
-                          {
-                            "any": [
-                              {
-                                "all": [
-                                  {
-                                    "chromatic": {
-                                      "field": "color"
-                                    }
-                                  },
-                                  {
-                                    "between": [
-                                      {
-                                        "hue": {
-                                          "field": "color"
-                                        }
-                                      },
-                                      250,
-                                      330
-                                    ]
-                                  }
-                                ]
-                              },
-                              {
-                                "all": [
-                                  {
-                                    "chromatic": {
-                                      "field": "backgroundColor"
-                                    }
-                                  },
-                                  {
-                                    "between": [
-                                      {
-                                        "hue": {
-                                          "field": "backgroundColor"
-                                        }
-                                      },
-                                      250,
-                                      330
-                                    ]
-                                  }
-                                ]
-                              },
-                              {
-                                "all": [
-                                  {
-                                    "chromatic": {
-                                      "field": "backgroundImage"
-                                    }
-                                  },
-                                  {
-                                    "between": [
-                                      {
-                                        "hue": {
-                                          "field": "backgroundImage"
-                                        }
-                                      },
-                                      250,
-                                      330
-                                    ]
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      },
-                      0
-                    ]
-                  },
-                  {
-                    "gt": [
-                      {
-                        "countOf": [
-                          {
-                            "field": "page.elements"
-                          },
-                          {
-                            "any": [
-                              {
-                                "all": [
-                                  {
-                                    "chromatic": {
-                                      "field": "color"
-                                    }
-                                  },
-                                  {
-                                    "between": [
-                                      {
-                                        "hue": {
-                                          "field": "color"
-                                        }
-                                      },
-                                      175,
-                                      210
-                                    ]
-                                  }
-                                ]
-                              },
-                              {
-                                "all": [
-                                  {
-                                    "chromatic": {
-                                      "field": "backgroundColor"
-                                    }
-                                  },
-                                  {
-                                    "between": [
-                                      {
-                                        "hue": {
-                                          "field": "backgroundColor"
-                                        }
-                                      },
-                                      175,
-                                      210
-                                    ]
-                                  }
-                                ]
-                              },
-                              {
-                                "all": [
-                                  {
-                                    "chromatic": {
-                                      "field": "backgroundImage"
-                                    }
-                                  },
-                                  {
-                                    "between": [
-                                      {
-                                        "hue": {
-                                          "field": "backgroundImage"
-                                        }
-                                      },
-                                      175,
-                                      210
-                                    ]
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      },
-                      0
-                    ]
-                  }
-                ]
-              },
-              {
-                "gte": [
-                  {
-                    "countOf": [
-                      {
-                        "field": "page.elements"
-                      },
-                      {
-                        "any": [
-                          {
-                            "chromatic": {
-                              "field": "color"
-                            }
-                          },
-                          {
-                            "chromatic": {
-                              "field": "backgroundColor"
-                            }
-                          },
-                          {
-                            "chromatic": {
-                              "field": "backgroundImage"
-                            }
-                          }
-                        ]
-                      }
-                    ]
-                  },
-                  3
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "message": "the palette leans on violet or cyan neon on a dark ground",
-      "severity": "P3",
-      "layer": "layout"
+      "id": "tiny-text"
     },
     {
       "name": "target-size",
@@ -4377,8 +3608,8 @@
       "id": "target-size"
     },
     {
-      "id": "tight-container-inset",
-      "name": "tight-container-inset",
+      "id": "cramped-padding",
+      "name": "cramped-padding",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -4434,7 +3665,7 @@
       "layer": "layout"
     },
     {
-      "name": "tight-line-height",
+      "name": "tight-leading",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -4495,11 +3726,11 @@
       "message": "line height is below 1.3",
       "severity": "P2",
       "layer": "content",
-      "id": "tight-line-height"
+      "id": "tight-leading"
     },
     {
-      "id": "unblurred-offset-shadow",
-      "name": "unblurred-offset-shadow",
+      "id": "hard-offset-shadow",
+      "name": "hard-offset-shadow",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -4548,8 +3779,8 @@
       "layer": "sheet"
     },
     {
-      "id": "uniform-spacing",
-      "name": "uniform-spacing",
+      "id": "monotonous-spacing",
+      "name": "monotonous-spacing",
       "scope": "page",
       "when": {
         "all": [
@@ -4784,7 +4015,7 @@
       "layer": "layout"
     },
     {
-      "name": "viewport-edge-text",
+      "name": "body-text-viewport-edge",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -4936,11 +4167,11 @@
       "message": "body text sits within the viewport edge",
       "severity": "P2",
       "layer": "layout",
-      "id": "viewport-edge-text"
+      "id": "body-text-viewport-edge"
     },
     {
-      "id": "washed-grey-on-tint",
-      "name": "washed-grey-on-tint",
+      "id": "gray-on-color",
+      "name": "gray-on-color",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -4972,8 +4203,8 @@
       "layer": "layout"
     },
     {
-      "id": "washed-out-image",
-      "name": "washed-out-image",
+      "id": "buried-raster",
+      "name": "buried-raster",
       "selector": "*",
       "operator": "all",
       "when": {
@@ -5380,364 +4611,6 @@
       "layer": "content"
     },
     {
-      "id": "glassmorphism",
-      "name": "glassmorphism",
-      "selector": "*",
-      "operator": "all",
-      "when": {
-        "all": [
-          {
-            "equals": [
-              {
-                "field": "visible"
-              },
-              true
-            ]
-          },
-          {
-            "matches": [
-              {
-                "lower": {
-                  "field": "backdropFilter"
-                }
-              },
-              "blur\\("
-            ]
-          }
-        ]
-      },
-      "message": "decorative backdrop-filter blur effect",
-      "severity": "P3",
-      "layer": "sheet"
-    },
-    {
-      "id": "pure-black-white",
-      "name": "pure-black-white",
-      "selector": "*",
-      "operator": "all",
-      "when": {
-        "all": [
-          {
-            "equals": [
-              {
-                "field": "visible"
-              },
-              true
-            ]
-          },
-          {
-            "any": [
-              {
-                "all": [
-                  {
-                    "gte": [
-                      {
-                        "alpha": {
-                          "field": "backgroundColor"
-                        }
-                      },
-                      0.9
-                    ]
-                  },
-                  {
-                    "equals": [
-                      {
-                        "red": {
-                          "field": "backgroundColor"
-                        }
-                      },
-                      0
-                    ]
-                  },
-                  {
-                    "equals": [
-                      {
-                        "green": {
-                          "field": "backgroundColor"
-                        }
-                      },
-                      0
-                    ]
-                  },
-                  {
-                    "equals": [
-                      {
-                        "blue": {
-                          "field": "backgroundColor"
-                        }
-                      },
-                      0
-                    ]
-                  }
-                ]
-              },
-              {
-                "all": [
-                  {
-                    "equals": [
-                      {
-                        "field": "hasText"
-                      },
-                      true
-                    ]
-                  },
-                  {
-                    "gte": [
-                      {
-                        "alpha": {
-                          "field": "color"
-                        }
-                      },
-                      0.9
-                    ]
-                  },
-                  {
-                    "equals": [
-                      {
-                        "red": {
-                          "field": "color"
-                        }
-                      },
-                      0
-                    ]
-                  },
-                  {
-                    "equals": [
-                      {
-                        "green": {
-                          "field": "color"
-                        }
-                      },
-                      0
-                    ]
-                  },
-                  {
-                    "equals": [
-                      {
-                        "blue": {
-                          "field": "color"
-                        }
-                      },
-                      0
-                    ]
-                  },
-                  {
-                    "number": {
-                      "field": "background.r"
-                    }
-                  },
-                  {
-                    "any": [
-                      {
-                        "lt": [
-                          {
-                            "field": "background.r"
-                          },
-                          250
-                        ]
-                      },
-                      {
-                        "lt": [
-                          {
-                            "field": "background.g"
-                          },
-                          250
-                        ]
-                      },
-                      {
-                        "lt": [
-                          {
-                            "field": "background.b"
-                          },
-                          250
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              },
-              {
-                "all": [
-                  {
-                    "equals": [
-                      {
-                        "field": "hasText"
-                      },
-                      true
-                    ]
-                  },
-                  {
-                    "gte": [
-                      {
-                        "alpha": {
-                          "field": "color"
-                        }
-                      },
-                      0.9
-                    ]
-                  },
-                  {
-                    "equals": [
-                      {
-                        "red": {
-                          "field": "color"
-                        }
-                      },
-                      255
-                    ]
-                  },
-                  {
-                    "equals": [
-                      {
-                        "green": {
-                          "field": "color"
-                        }
-                      },
-                      255
-                    ]
-                  },
-                  {
-                    "equals": [
-                      {
-                        "blue": {
-                          "field": "color"
-                        }
-                      },
-                      255
-                    ]
-                  },
-                  {
-                    "number": {
-                      "field": "background.r"
-                    }
-                  },
-                  {
-                    "lte": [
-                      {
-                        "field": "background.r"
-                      },
-                      12
-                    ]
-                  },
-                  {
-                    "lte": [
-                      {
-                        "field": "background.g"
-                      },
-                      12
-                    ]
-                  },
-                  {
-                    "lte": [
-                      {
-                        "field": "background.b"
-                      },
-                      12
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "message": "pure #000000 or pure #ffffff on dark neutral instead of tinted greys",
-      "severity": "P3",
-      "layer": "sheet"
-    },
-    {
-      "id": "dark-glow",
-      "name": "dark-glow",
-      "selector": "*",
-      "operator": "all",
-      "when": {
-        "all": [
-          {
-            "equals": [
-              {
-                "field": "visible"
-              },
-              true
-            ]
-          },
-          {
-            "shadowChromatic": {
-              "field": "focusStyle.boxShadow"
-            }
-          },
-          {
-            "gte": [
-              {
-                "shadowBlur": {
-                  "field": "focusStyle.boxShadow"
-                }
-              },
-              20
-            ]
-          },
-          {
-            "any": [
-              {
-                "all": [
-                  {
-                    "gte": [
-                      {
-                        "alpha": {
-                          "field": "backgroundColor"
-                        }
-                      },
-                      0.5
-                    ]
-                  },
-                  {
-                    "dark": {
-                      "field": "backgroundColor"
-                    }
-                  }
-                ]
-              },
-              {
-                "all": [
-                  {
-                    "number": {
-                      "field": "background.r"
-                    }
-                  },
-                  {
-                    "lt": [
-                      {
-                        "field": "background.r"
-                      },
-                      60
-                    ]
-                  },
-                  {
-                    "lt": [
-                      {
-                        "field": "background.g"
-                      },
-                      60
-                    ]
-                  },
-                  {
-                    "lt": [
-                      {
-                        "field": "background.b"
-                      },
-                      60
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "message": "wide chromatic glow shadow on a dark surface",
-      "severity": "P3",
-      "layer": "sheet"
-    },
-    {
       "id": "transition-all",
       "name": "transition-all",
       "selector": "*",
@@ -5996,50 +4869,6 @@
         ]
       },
       "message": "three or more identical-sized cards repeat inside one grid container",
-      "severity": "P3",
-      "layer": "layout"
-    },
-    {
-      "id": "modal-abuse",
-      "name": "modal-abuse",
-      "selector": "*",
-      "operator": "all",
-      "when": {
-        "all": [
-          {
-            "equals": [
-              {
-                "field": "visible"
-              },
-              true
-            ]
-          },
-          {
-            "any": [
-              {
-                "equals": [
-                  {
-                    "field": "tag"
-                  },
-                  "dialog"
-                ]
-              },
-              {
-                "in": [
-                  {
-                    "field": "role"
-                  },
-                  [
-                    "dialog",
-                    "alertdialog"
-                  ]
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "message": "visible modal or dialog interrupts initial page load",
       "severity": "P3",
       "layer": "layout"
     },

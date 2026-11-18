@@ -32,6 +32,14 @@ run() {
   expected=$2
   out=$3
   shift 3
+  inject=0
+  case "${1:-}" in
+    --url|--source|source) inject=1 ;;
+  esac
+  for arg in "$@"; do
+    if [ "$arg" = "--rules" ]; then inject=0; fi
+  done
+  if [ "$inject" -eq 1 ]; then set -- "$@" --rules "$pack"; fi
   "$bin" "$@" >"$out" 2>"$tmp/$name.err"
   code=$?
   if [ "$code" -eq "$expected" ]; then
@@ -69,6 +77,15 @@ run_in() {
   expected=$3
   out=$4
   shift 4
+  inject=0
+  case "${1:-}" in
+    audit|source) inject=1 ;;
+  esac
+  if [ -f "$dir/.opal/rules.json" ]; then inject=0; fi
+  for arg in "$@"; do
+    if [ "$arg" = "--rules" ]; then inject=0; fi
+  done
+  if [ "$inject" -eq 1 ]; then set -- "$@" --rules "$pack"; fi
   (cd "$dir" && "$bin" "$@") >"$out" 2>"$tmp/$name.err"
   code=$?
   if [ "$code" -eq "$expected" ]; then
@@ -109,28 +126,41 @@ generic_url=$(file_url generic.html)
 design_url=$(file_url design-drift.html)
 dtcg="$here/design-dtcg.json"
 pack="$root/skills/opal/references/default-rules.json"
+derived() {
+  jq "$2" "$pack" >"$tmp/$1.json"
+}
+derived contrast-off '.rules |= map(if .id == "low-contrast" then .enabled = false else . end)'
+derived contrast-error '.rules |= map(if .id == "low-contrast" then .severity = "error" | .layer = "source" else . end)'
+derived nested-error '.rules |= map(if .id == "nested-cards" then .severity = "error" else . end)'
+derived state-pack '.rules |= map(if .id == "line-length" then .severity = "error" | .params.maxCh = 20 else . end)'
+derived params-missing '.rules |= map(if .id == "aphoristic-cadence" then .params.minSections = "param:type.missing.minSections" else . end)'
+derived rules-base '.structural += [{"name":"base-border-width","selector":".surface","properties":{"border-width":{"deny":["1px"]}}}]'
+derived rules-extends '.extends = "rules-base.json" | .structural += [{"name":"child-border-style","selector":".surface","properties":{"border-style":{"deny":["solid"]}}}] | .rules |= map(if .id == "nested-cards" then .severity = "error" else . end)'
+derived source-disable '.sourceRules |= map(if .id == "transition-all" then .enabled = false else . end)'
+derived project-pack '(.structural += [{"name":"project-border-width","selector":".surface","properties":{"border-width":{"deny":["1px"]}}}]) | .rules |= map(if .id == "nested-cards" then .severity = "error" else . end)'
+derived state-pack '.rules += [{"name":"line-length","selector":"*","operator":"all","when":{"all":[{"equals":[{"field":"visible"},true]},{"equals":[{"field":"hasText"},true]},{"gte":[{"field":"textLength"},120]},{"gt":[{"field":"chWidth"},0]},{"gt":[{"div":[{"sub":[{"field":"rect.w"},{"add":[{"field":"padding.1"},{"field":"padding.3"}]}]},{"field":"chWidth"}]},{"param":"maxCh"}]}]},"message":"line length above the pack limit","id":"line-length","params":{"maxCh":20},"severity":"error","layer":"layout"}]'
 jqr default-pack-scrub "$pack" '[.rules[].id] | index("gpt-thin-border-wide-shadow") | not'
-jqr default-pack-count "$pack" '(.rules | length == 79) and (.sourceRules | length == 10)'
-jqr default-pack-fixed "$pack" '[.rules[].id] | (index("contrast") != null) and (index("heading-spacing-relation") != null)'
+jqr default-pack-count "$pack" '(.rules | length == 66) and (.sourceRules | length == 10)'
+jqr default-pack-fixed "$pack" '[.rules[].id] | (index("low-contrast") != null) and (index("heading-spacing-relation") != null)'
 
 run clean 0 "$tmp/clean.json" --url "$clean_url" --no-sandbox --pretty
 jqr clean-empty "$tmp/clean.json" '.findings == []'
 jqr clean-colour-verified "$tmp/clean.json" '.unverified == []'
 
 run generic 2 "$tmp/generic.json" --url "$generic_url" --no-sandbox --pretty
-for check in page-overflow missing-lang heading-skip missing-name target-size positive-tabindex contrast clipped-text; do
+for check in page-overflow missing-lang skipped-heading missing-name target-size positive-tabindex low-contrast text-overflow; do
   jqr "generic-$check" "$tmp/generic.json" "[.findings[].check] | index(\"$check\") != null"
 done
 jqr generic-visible "$tmp/generic.json" '.summary.captured >= .summary.elements'
 
-run generic-contrast-off 2 "$tmp/generic-contrast-off.json" --url "$generic_url" --no-sandbox --rules "$here/rules-disable-contrast.json" --pretty
-jqr generic-contrast-off "$tmp/generic-contrast-off.json" '[.findings[].check] | index("contrast") == null'
+run generic-contrast-off 2 "$tmp/generic-contrast-off.json" --url "$generic_url" --no-sandbox --rules "$tmp/contrast-off.json" --pretty
+jqr generic-contrast-off "$tmp/generic-contrast-off.json" '[.findings[].check] | index("low-contrast") == null'
 jqr generic-contrast-off-summary "$tmp/generic-contrast-off.json" '.summary.byCheck.contrast == null'
 
-run generic-contrast-error 2 "$tmp/generic-contrast-error.json" --url "$generic_url" --no-sandbox --rules "$here/rules-override-contrast.json" --pretty
-jqr generic-contrast-error "$tmp/generic-contrast-error.json" '[.findings[] | select(.check == "contrast")] | length > 0 and all(.severity == "error" and .layer == "source")'
+run generic-contrast-error 2 "$tmp/generic-contrast-error.json" --url "$generic_url" --no-sandbox --rules "$tmp/contrast-error.json" --pretty
+jqr generic-contrast-error "$tmp/generic-contrast-error.json" '[.findings[] | select(.check == "low-contrast")] | length > 0 and all(.severity == "error" and .layer == "source")'
 
-run clean-contrast-off 0 "$tmp/clean-contrast-off.json" --url "$clean_url" --no-sandbox --rules "$here/rules-disable-contrast.json" --pretty
+run clean-contrast-off 0 "$tmp/clean-contrast-off.json" --url "$clean_url" --no-sandbox --rules "$tmp/contrast-off.json" --pretty
 
 run diagnostics 2 "$tmp/diagnostics.json" --url "$(file_url diagnostics.html)" --no-sandbox --pretty
 for check in console-error page-error network-error; do
@@ -139,7 +169,7 @@ done
 jqr diagnostics-layer "$tmp/diagnostics.json" '[.findings[] | select(.check == "page-error") | .layer] | all(. == "runtime")'
 
 run modern-colors 2 "$tmp/modern-colors.json" --url "$(file_url modern-colors.html)" --no-sandbox --pretty
-jqr modern-colors-contrast "$tmp/modern-colors.json" '[.findings[] | select(.check == "contrast") | .evidence.color] | all(startswith("rgba("))'
+jqr modern-colors-contrast "$tmp/modern-colors.json" '[.findings[] | select(.check == "low-contrast") | .evidence.color] | all(startswith("rgba("))'
 jqr modern-colors-unverified "$tmp/modern-colors.json" '.unverified == []'
 
 run frames 0 "$tmp/frames.json" --url "$(file_url frames.html)" --no-sandbox --pretty
@@ -152,13 +182,13 @@ run hidden-share 2 "$tmp/hidden-share.json" --url "$(file_url hidden-share.html)
 run uniform 2 "$tmp/uniform.json" --url "$(file_url uniform.html)" --no-sandbox --pretty
 run short-tail 0 "$tmp/short-tail.json" --url "$(file_url short-tail.html)" --no-sandbox --pretty
 jq -s '{checks: ([.[].findings[].check] | unique)}'   "$tmp/expanded.json" "$tmp/expanded-dark.json" "$tmp/hidden-share.json" "$tmp/uniform.json" "$tmp/short-tail.json"   >"$tmp/expanded-checks.json"
-for check in   accent-border-rounded continuous-scroller clipped-escape-child colored-halo-shadow   tight-container-inset cream-canvas decorative-blinking-caret dismissive-copy   opening-column-overrun compressed-type-scale washed-grey-on-tint grid-line-background   unblurred-offset-shadow heading-spacing-relation hidden-text-share image-source-missing   irregular-clip-path justified-narrow-text literal-uppercase-passage numeric-section-index   oversized-headline oversized-italic-serif pill-eyebrow-label pulsing-status-dot   radial-background-wash radial-spotlight rebuttal-cadence reflex-font-choice   repeated-container-copy repeating-stripe-surface row-elevation-conflict scroller-edge-flush   primitive-svg-scene short-heading-tail short-last-line sibling-text-collision   sub-12px-body synthetic-purple-palette overlapping-copy tight-line-height   sub-11px-control-text uniform-spacing viewport-edge-text washed-out-image excess-letter-spacing; do
+for check in   border-accent-on-rounded clipped-overflow-container cramped-padding   blinking-cursor theater-slop-phrase   first-viewport-column-overflow gray-on-color codex-grid-background   hard-offset-shadow heading-spacing-relation content-hidden-at-rest broken-image   organic-clip-path justified-text all-caps-body numbered-section-labels   italic-serif-display hero-eyebrow-chip pulsing-dot   radial-halo radial-spotlight-glow aphoristic-cadence overused-font   repeated-container-text repeating-stripes-gradient row-elevation-conflict edge-flush-cards   shape-assembled-illustration unbalanced-heading straggler sibling-text-collision   tiny-text text-occlusion tight-leading   undersized-ui-text monotonous-spacing body-text-viewport-edge buried-raster wide-tracking; do
   jqr "expanded-$check" "$tmp/expanded-checks.json" ".checks | index(\"$check\") != null"
 done
 
-run expanded-contrast-off 2 "$tmp/expanded-contrast-off.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$here/rules-disable-contrast.json" --pretty
-jqr expanded-contrast-off "$tmp/expanded-contrast-off.json" '[.findings[].check] | index("contrast") == null'
-jqr expanded-contrast-off-unverified "$tmp/expanded-contrast-off.json" '[.unverified[] | select(.check == "contrast")] | length == 0'
+run expanded-contrast-off 2 "$tmp/expanded-contrast-off.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$tmp/contrast-off.json" --pretty
+jqr expanded-contrast-off "$tmp/expanded-contrast-off.json" '[.findings[].check] | index("low-contrast") == null'
+jqr expanded-contrast-off-unverified "$tmp/expanded-contrast-off.json" '[.unverified[] | select(.check == "low-contrast")] | length == 0'
 
 run determinism-first 2 "$tmp/determinism-first.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$pack" --theme both --viewport sweep --pretty
 run determinism-second 2 "$tmp/determinism-second.json" --url "$(file_url expanded.html)" --no-sandbox --rules "$pack" --theme both --viewport sweep --pretty
@@ -172,13 +202,13 @@ run disclosure 2 "$tmp/disclosure.json" --url "$(file_url disclosure.html)" --no
 jqr disclosure-expanded "$tmp/disclosure.json" '.states.expanded | length == 1'
 jqr disclosure-skip "$tmp/disclosure.json" '[.states.skipped[] | select(.reason == "postcondition-not-met")] | length == 1'
 
-run nested 2 "$tmp/nested.json" --url "$(file_url structure.html)" --no-sandbox --rules "$here/rules-error.json" --pretty
+run nested 2 "$tmp/nested.json" --url "$(file_url structure.html)" --no-sandbox --rules "$tmp/nested-error.json" --pretty
 jqr nested-error "$tmp/nested.json" '[.findings[] | select(.check == "nested-cards" and .severity == "error" and .state == "default" and .layer == "layout")] | length == 1'
 
-run cards 2 "$tmp/cards.json" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-error.json" --pretty
+run cards 2 "$tmp/cards.json" --url "$(file_url cards.html)" --no-sandbox --rules "$tmp/nested-error.json" --pretty
 jqr cards-surface "$tmp/cards.json" '[.findings[] | select(.check == "nested-cards")] | length == 2'
 
-run state 2 "$tmp/state.json" --url "$(file_url state.html)" --no-sandbox --expand --rules "$here/rules-state.json" --pretty
+run state 2 "$tmp/state.json" --url "$(file_url state.html)" --no-sandbox --expand --rules "$tmp/state-pack.json" --pretty
 jqr state-open "$tmp/state.json" '[.findings[] | select(.check == "line-length")] | length > 0 and all(.state == "open" and (.states == ["open"]))'
 jqr state-postcondition "$tmp/state.json" '.states.expanded[0].postcondition == "aria-expanded=true or controlled region visible"'
 jqr state-hidden "$tmp/state.json" '.summary.captured > .summary.elements'
@@ -222,25 +252,25 @@ run partial 2 "$tmp/partial.json.report" --url "$design_url" --no-sandbox --desi
 jqr partial-preserve "$tmp/partial.json" '.color.ink["$value"] == "#1a1a1a"'
 jqr partial-fill "$tmp/partial.json" '.radius["radius-1"] != null'
 
-run params 2 "$tmp/params.json" --url "$design_url" --no-sandbox --design "$dtcg" --rules "$here/rules-params.json" --pretty
+run params 2 "$tmp/params.json" --url "$design_url" --no-sandbox --design "$dtcg" --rules "$tmp/params-missing.json" --pretty
 
-run extends 2 "$tmp/extends.json" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-extends.json" --pretty
+run extends 2 "$tmp/extends.json" --url "$(file_url cards.html)" --no-sandbox --rules "$tmp/rules-extends.json" --pretty
 jqr extends-named "$tmp/extends.json" '[.findings[] | select(.check == "nested-cards" and .severity == "error")] | length == 2'
 jqr extends-base "$tmp/extends.json" '[.findings[] | select(.check == "base-border-width")] | length == 1'
 jqr extends-child "$tmp/extends.json" '[.findings[] | select(.check == "child-border-style")] | length == 1'
 
-run extends-pack 0 "$tmp/extends-pack.json" pack --rules "$here/rules-extends.json" --json
+run extends-pack 0 "$tmp/extends-pack.json" pack --rules "$tmp/rules-extends.json" --json
 jqr extends-pack-sources "$tmp/extends-pack.json" '.sources[0].origin == "explicit" and .sources[1].origin == "extended" and (.sources[1].path | endswith("rules-base.json"))'
 
 run extends-cycle 1 "$tmp/extends-cycle.json" --url "$clean_url" --no-sandbox --rules "$here/rules-cycle-a.json"
 err_has extends-cycle "extends cycle"
 run extends-missing 1 "$tmp/extends-missing.json" --url "$clean_url" --no-sandbox --rules "$here/rules-extends-missing.json"
 err_has extends-missing "read rules file"
-jqr params-missing "$tmp/params.json" '[.unverified[] | select(.check == "line-length" and (.reason | startswith("missing param:")) and .rule == "line-length")] | length == 1'
+jqr params-missing "$tmp/params.json" '[.unverified[] | select(.check == "aphoristic-cadence" and (.reason | startswith("missing param:")) and .rule == "aphoristic-cadence")] | length == 1'
 
 run dark 2 "$tmp/dark.json" --url "$(file_url dark-only.html)" --no-sandbox --theme both --pretty
 jqr dark-themes "$tmp/dark.json" '.themes == ["light", "dark"]'
-jqr dark-finding-theme "$tmp/dark.json" '[.findings[] | select(.check == "contrast") | .themes] | any(. == ["light"])'
+jqr dark-finding-theme "$tmp/dark.json" '[.findings[] | select(.check == "low-contrast") | .themes] | any(. == ["light"])'
 
 run source 2 "$tmp/source.json" --source "$here/source" --source-all --pretty
 jqr source-token-filter "$tmp/source.json" '[.findings[] | select(.check == "raw-color") | .file] | unique == ["component.tsx"]'
@@ -258,9 +288,13 @@ err_has launch-fail "status: exit status: 3"
 run launch-timeout 1 "$tmp/launch-timeout.json" --url "$clean_url" --chrome "$here/sleep-chrome.sh" --no-sandbox --launch-timeout 100
 err_has launch-timeout "did not report a DevTools endpoint within 100ms"
 
-for name in invalid-key invalid-rule-id invalid-property invalid-selector invalid-param; do
+for name in invalid-key invalid-property invalid-selector; do
   run "$name" 1 "$tmp/$name.json" --url "$clean_url" --no-sandbox --rules "$here/$name.json"
   err_has "$name" "rules:"
+done
+for name in invalid-rule-id invalid-param; do
+  run "$name" 0 "$tmp/$name.json" --url "$clean_url" --no-sandbox --rules "$here/$name.json"
+  jqr "$name-gap" "$tmp/$name.json" '.coverageGaps | length > 0'
 done
 
 run init 0 "$tmp/init.out" init "$tmp/project"
@@ -268,43 +302,7 @@ exists init-design "$tmp/project/.opal/design.json"
 exists init-readme "$tmp/project/.opal/README.md"
 
 mkdir -p "$tmp/home/.opal" "$tmp/project/.opal" "$tmp/neutral"
-cat >"$tmp/home/.opal/rules.json" <<'EOF'
-{
-  "version": 1,
-  "pack": "user",
-  "structural": [
-    {
-      "name": "user-border-style",
-      "selector": ".surface",
-      "properties": {
-        "border-style": { "deny": ["solid"] }
-      }
-    }
-  ],
-  "rules": [
-    { "id": "nested-cards", "enabled": true, "severity": "advisory", "layer": "layout" },
-    { "id": "line-length", "enabled": true, "severity": "advisory", "layer": "layout", "params": { "maxCh": 40 } }
-  ]
-}
-EOF
-cat >"$tmp/project/.opal/rules.json" <<'EOF'
-{
-  "version": 1,
-  "pack": "project",
-  "structural": [
-    {
-      "name": "project-border-width",
-      "selector": ".surface",
-      "properties": {
-        "border-width": { "deny": ["1px"] }
-      }
-    }
-  ],
-  "rules": [
-    { "id": "nested-cards", "enabled": true, "severity": "error", "layer": "layout" }
-  ]
-}
-EOF
+cp "$tmp/project-pack.json" "$tmp/project/.opal/rules.json"
 
 run_in pack "$tmp/project" 0 "$tmp/pack.out" pack
 if [ "$(sed -n '1p' "$tmp/pack.out")" = "$tmp/project/.opal/rules.json" ]; then
@@ -312,14 +310,14 @@ if [ "$(sed -n '1p' "$tmp/pack.out")" = "$tmp/project/.opal/rules.json" ]; then
 else
   bad "pack first source is not the project rules file"
 fi
-if [ "$(sed -n '2p' "$tmp/pack.out")" = "$tmp/home/.opal/rules.json" ]; then
-  ok
+if [ -n "$(sed -n '2p' "$tmp/pack.out")" ]; then
+  bad "pack reported a second rules file"
 else
-  bad "pack second source is not the user rules file"
+  ok
 fi
 
-run_in pack-explicit "$tmp/project" 0 "$tmp/pack-explicit.out" pack --rules "$here/rules-error.json"
-if [ "$(sed -n '1p' "$tmp/pack-explicit.out")" = "$here/rules-error.json" ]; then
+run_in pack-explicit "$tmp/project" 0 "$tmp/pack-explicit.out" pack --rules "$tmp/nested-error.json"
+if [ "$(sed -n '1p' "$tmp/pack-explicit.out")" = "$tmp/nested-error.json" ]; then
   ok
 else
   bad "pack --rules does not take precedence"
@@ -329,20 +327,18 @@ run_in overlay "$tmp/project" 2 "$tmp/overlay.json" audit "$(file_url cards.html
 jqr overlay-named-error "$tmp/overlay.json" '[.findings[] | select(.check == "nested-cards" and .severity == "error")] | length == 2'
 jqr overlay-named-override "$tmp/overlay.json" '[.findings[] | select(.check == "nested-cards" and .severity == "advisory")] | length == 0'
 jqr overlay-project-structural "$tmp/overlay.json" '[.findings[] | select(.check == "project-border-width")] | length == 1'
-jqr overlay-user-structural "$tmp/overlay.json" '[.findings[] | select(.check == "user-border-style")] | length == 1'
-jqr overlay-sources "$tmp/overlay.json" '.sources.rules | length == 2 and (.[0] | endswith("/.opal/rules.json")) and (.[1] | endswith("/.opal/rules.json"))'
-jqr overlay-rule-origins "$tmp/overlay.json" '.sources.rulesOrigin == ["project", "user"]'
+jqr overlay-sources "$tmp/overlay.json" '.sources.rules | length == 1 and (.[0] | endswith("/.opal/rules.json"))'
+jqr overlay-rule-origins "$tmp/overlay.json" '.sources.rulesOrigin == ["project"]'
 jqr overlay-schema "$tmp/overlay.json" '.schemaVersion == 1'
 jqr overlay-design-source "$tmp/overlay.json" '(.sources.design | length == 1) and (.sources.design[0] | endswith("/.opal/design.json")) and (.sources.designOrigin == ["project"])'
 jqr overlay-rule-source-project "$tmp/overlay.json" "[.findings[] | select(.check == \"project-border-width\") | .ruleSource] | all(contains(\"$tmp/project\"))"
-jqr overlay-rule-source-user "$tmp/overlay.json" "[.findings[] | select(.check == \"user-border-style\") | .ruleSource] | all(contains(\"$tmp/home\"))"
 jqr overlay-named-source "$tmp/overlay.json" "[.findings[] | select(.check == \"nested-cards\") | .ruleSource] | all(contains(\"$tmp/project\"))"
 
 run_in audit-separator "$tmp/project" 2 "$tmp/audit-separator.json" audit -- "$(file_url cards.html)" --no-sandbox --pretty
-jqr audit-separator-sources "$tmp/audit-separator.json" '.sources.rules | length == 2'
+jqr audit-separator-sources "$tmp/audit-separator.json" '.sources.rules | length == 1'
 
 run_in pack-json "$tmp/project" 0 "$tmp/pack.json" pack --json
-jqr pack-json-sources "$tmp/pack.json" '.sources | length == 2 and .[0].origin == "project" and (.[0].path | endswith("/.opal/rules.json")) and .[1].origin == "user"'
+jqr pack-json-sources "$tmp/pack.json" '.sources | length == 1 and .[0].origin == "project" and (.[0].path | endswith("/.opal/rules.json"))'
 
 run_in suppress "$tmp/project" 2 "$tmp/suppress.json" audit "$(file_url suppress.html)" --no-sandbox --pretty
 jqr suppress-nested "$tmp/suppress.json" '[.findings[] | select(.check == "nested-cards")] | length == 1'
@@ -390,14 +386,14 @@ run source-command 2 "$tmp/source-command.json" source "$here/source" --source-a
 jqr source-command-token "$tmp/source-command.json" '[.findings[] | select(.check == "raw-color") | .file] | unique == ["component.tsx"]'
 jqr source-command-schema "$tmp/source-command.json" '.schemaVersion == 1'
 
-run format-sarif 2 "$tmp/sarif.json" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-error.json" --format sarif
+run format-sarif 2 "$tmp/sarif.json" --url "$(file_url cards.html)" --no-sandbox --rules "$tmp/nested-error.json" --format sarif
 jqr format-sarif "$tmp/sarif.json" '.version == "2.1.0" and (.runs[0].results | length > 0) and (.runs[0].tool.driver.rules | length > 0) and ([.runs[0].results[].ruleId] | index("nested-cards") != null)'
 
-run format-markdown 2 "$tmp/format.md" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-error.json" --format markdown
+run format-markdown 2 "$tmp/format.md" --url "$(file_url cards.html)" --no-sandbox --rules "$tmp/nested-error.json" --format markdown
 file_has format-markdown "$tmp/format.md" "# opal:"
 file_has format-markdown "$tmp/format.md" "nested-cards"
 
-run format-github 2 "$tmp/format.github" --url "$(file_url cards.html)" --no-sandbox --rules "$here/rules-error.json" --format github
+run format-github 2 "$tmp/format.github" --url "$(file_url cards.html)" --no-sandbox --rules "$tmp/nested-error.json" --format github
 file_has format-github "$tmp/format.github" "::error title=nested-cards"
 
 run source-format-sarif 2 "$tmp/source-format.json" source "$here/source" --source-all --format sarif
@@ -428,7 +424,7 @@ jqr source-suppress-count "$tmp/source-suppress.json" '.summary.findings == 1 an
 jqr source-suppress-line "$tmp/source-suppress.json" '.findings[0].line == 1 and .findings[0].file == "component.tsx"'
 
 mkdir -p "$tmp/baseline-project/.opal"
-cp "$here/rules-error.json" "$tmp/baseline-project/.opal/rules.json"
+cp "$tmp/nested-error.json" "$tmp/baseline-project/.opal/rules.json"
 run_in baseline-write "$tmp/baseline-project" 0 "$tmp/baseline-write.json" audit "$(file_url cards.html)" --no-sandbox --write-baseline --pretty
 exists baseline-file "$tmp/baseline-project/.opal/baseline.json"
 jqr baseline-written "$tmp/baseline-write.json" '.baseline.written > 0'
@@ -510,7 +506,7 @@ saved_home=$HOME
 export HOME="$tmp/clean-home"
 mkdir -p "$HOME"
 run impeccable-rules 2 "$tmp/impeccable.json" --url "file://$tmp/impeccable.html" --no-sandbox --pretty
-for check in sheet-selection sheet-tap-highlight icon-tile-stack hero-metric-template glassmorphism pure-black-white dark-glow transition-all clickable-non-control identical-card-grid modal-abuse; do
+for check in sheet-selection sheet-tap-highlight icon-tile-stack hero-metric-template transition-all clickable-non-control identical-card-grid; do
   jqr "impeccable-$check" "$tmp/impeccable.json" "[.findings[].check] | index(\"$check\") != null"
 done
 
@@ -532,15 +528,7 @@ cat >"$tmp/light-single-card.html" <<'EOF'
 </body>
 </html>
 EOF
-cat >"$tmp/disable-source-transition.json" <<'EOF'
-{
-  "version": 2,
-  "sourceRules": [
-    { "id": "transition-all", "enabled": false }
-  ]
-}
-EOF
-run light-single-card 0 "$tmp/light-single-card.json" --url "file://$tmp/light-single-card.html" --rules "$tmp/disable-source-transition.json" --no-sandbox --pretty
+run light-single-card 0 "$tmp/light-single-card.json" --url "file://$tmp/light-single-card.html" --rules "$tmp/source-disable.json" --no-sandbox --pretty
 jqr light-no-pure-black "$tmp/light-single-card.json" '[.findings[].check] | index("pure-black-white") == null'
 jqr light-no-identical-grid "$tmp/light-single-card.json" '[.findings[].check] | index("identical-card-grid") == null'
 jqr source-disable-keeps-rendered-transition-all "$tmp/light-single-card.json" '[.findings[].check] | index("transition-all") != null'
@@ -556,6 +544,34 @@ cat >"$tmp/invalid-source-regex.json" <<'EOF'
 EOF
 run invalid-source-regex 1 "$tmp/invalid-source-regex.out" source "$tmp/source-custom" --rules "$tmp/invalid-source-regex.json"
 err_has invalid-source-regex "rules:"
+
+mkdir -p "$tmp/det-home-a/.opal" "$tmp/det-home-b/.opal"
+printf '{"version":2,"rules":[{"id":"nested-cards","enabled":false}]}\n' >"$tmp/det-home-a/.opal/rules.json"
+printf '{"version":2,"rules":[]}\n' >"$tmp/det-home-b/.opal/rules.json"
+HOME="$tmp/det-home-a" "$bin" audit "$clean_url" --no-sandbox --rules "$pack" --pretty >"$tmp/det-audit-a.json" 2>"$tmp/det-audit-a.err"
+HOME="$tmp/det-home-b" "$bin" audit "$clean_url" --no-sandbox --rules "$pack" --pretty >"$tmp/det-audit-b.json" 2>"$tmp/det-audit-b.err"
+if cmp -s "$tmp/det-audit-a.json" "$tmp/det-audit-b.json"; then ok; else bad "audit output changed with HOME"; fi
+HOME="$tmp/det-home-a" "$bin" pack --json >"$tmp/det-pack-a.json" 2>"$tmp/det-pack-a.err"
+HOME="$tmp/det-home-b" "$bin" pack --json >"$tmp/det-pack-b.json" 2>"$tmp/det-pack-b.err"
+if cmp -s "$tmp/det-pack-a.json" "$tmp/det-pack-b.json"; then ok; else bad "pack output changed with HOME"; fi
+
+cat >"$tmp/clean-cards.html" <<'EOF'
+<!doctype html><html lang="en"><head><style>.card{width:220px;height:120px;background:#f2f2f2;padding:16px;border-radius:8px}</style></head><body><main><section class="card">Basic</section><section class="card">Pro</section><section class="card">Team</section></main></body></html>
+EOF
+run negative-cards 2 "$tmp/negative-cards.json" --url "file://$tmp/clean-cards.html" --no-sandbox --rules "$pack" --allow identical-card-grid --pretty
+jqr negative-cards-clean "$tmp/negative-cards.json" '[.findings[].check] | index("identical-card-grid") == null'
+
+cat >"$tmp/clean-kicker.html" <<'EOF'
+<!doctype html><html lang="en"><head><style>.k{font-size:12px;text-transform:uppercase;letter-spacing:.08em}h1{font-size:32px}</style></head><body><span class="k" data-opal-ignore="kicker-above-heading">Docs</span><h1>Guide</h1><p>Body copy.</p></body></html>
+EOF
+run negative-kicker 2 "$tmp/negative-kicker.json" --url "file://$tmp/clean-kicker.html" --no-sandbox --rules "$pack" --pretty
+jqr negative-kicker-clean "$tmp/negative-kicker.json" '[.findings[].check] | index("kicker-above-heading") == null'
+
+cat >"$tmp/clean-chip.html" <<'EOF'
+<!doctype html><html lang="en"><head><style>.chip{display:inline-block;padding:4px 10px;border-radius:999px;background:#eee;font-size:12px;letter-spacing:.08em;text-transform:uppercase}h1{font-size:48px}</style></head><body><span class="chip">Product</span><h1>Build faster</h1></body></html>
+EOF
+run negative-chip 2 "$tmp/negative-chip.json" --url "file://$tmp/clean-chip.html" --no-sandbox --rules "$pack" --allow hero-eyebrow-chip,kicker-above-heading --pretty
+jqr negative-chip-clean "$tmp/negative-chip.json" '[.findings[].check] | index("hero-eyebrow-chip") == null and index("kicker-above-heading") == null'
 
 echo "opal tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

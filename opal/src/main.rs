@@ -26,8 +26,8 @@ use output::{emit_report, OutputFormat};
 use source::SourceScan;
 
 use rules::{
-    apply_ruleset, apply_unverified_rules, check_keys, expand_rules_sources, load_default_rules,
-    load_rules, load_rules_with_default, rule_findings, RuleSet,
+    apply_ruleset, apply_unverified_rules, check_keys, default_pack_data, expand_rules_sources,
+    load_pack, load_rules, rule_findings, RuleSet,
 };
 
 struct Args {
@@ -194,7 +194,7 @@ fn parse_args(argv: Vec<String>) -> Result<Args> {
             "--pretty" => pretty = true,
             "--help" | "-h" => {
                 println!(
-                    "usage: opal init [DIR]\n       opal audit URL [options]\n       opal source [DIR] [options]\n       opal pack [--rules PATH] [--json]\n       opal doctor [--json]\n       opal --url URL [options]\n       opal --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n         --baseline PATH --write-baseline --update-baseline --no-baseline\n         --freeze-animations --format json|sarif|markdown|github\n\nrules resolve from --rules, the nearest .opal/rules.json, then ~/.opal/rules.json;\nnamed rules overlay by id and structural rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
+                    "usage: opal init [DIR]\n       opal audit URL [options]\n       opal source [DIR] [options]\n       opal pack [--rules PATH] [--json]\n       opal doctor [--json]\n       opal --url URL [options]\n       opal --source DIR [--pretty]\n\noptions: --wait-for SELECTOR --viewport WxH --timeout MS --launch-timeout MS\n         --state NAME --theme light|dark --viewport WxH|sweep --chrome PATH\n         --no-sandbox --expand --max-states N --design PATH|auto --infer-missing\n         --force --sample-states --allow id,id --source-all --rules PATH\n         --baseline PATH --write-baseline --update-baseline --no-baseline\n         --freeze-animations --format json|sarif|markdown|github\n\nrules resolve from --rules or the nearest .opal/rules.json;\nnamed rules overlay by id and declarative rules append.\ndesign layers --design, the nearest .opal/design.json, then ~/.opal/design.json."
                 );
                 std::process::exit(0);
             }
@@ -332,14 +332,12 @@ fn resolve_rules_sources(explicit: Option<&Path>) -> Vec<(PathBuf, &'static str)
     let mut sources = Vec::new();
     if let Some(path) = explicit {
         sources.push((path.to_path_buf(), "explicit"));
+        return sources;
     }
     if let Ok(cwd) = std::env::current_dir() {
         if let Some(config) = project_config_dir(&cwd) {
             push_source(&mut sources, config.join("rules.json"), "project");
         }
-    }
-    if let Some(home) = home_dir() {
-        push_source(&mut sources, home.join(".opal").join("rules.json"), "user");
     }
     sources
 }
@@ -784,13 +782,36 @@ fn init_mode(argv: &[String]) -> Result<i32> {
     let config = target.join(".opal");
     std::fs::create_dir_all(&config).with_context(|| format!("create {}", config.display()))?;
     let design = config.join("design.json");
+    let rules = config.join("rules.json");
+    let readme = config.join("README.md");
+    for path in [&design, &rules, &readme] {
+        if path.exists() && !path.is_file() {
+            anyhow::bail!("not a regular file: {}", path.display());
+        }
+    }
     if design.exists() {
         println!("kept {}", design.display());
     } else {
         std::fs::write(&design, "{}\n").with_context(|| format!("write {}", design.display()))?;
         println!("created {}", design.display());
     }
-    let readme = config.join("README.md");
+    if rules.exists() {
+        println!("kept {}", rules.display());
+    } else {
+        let mut pack = default_pack_data()?;
+        for key in ["rules", "sourceRules", "structural"] {
+            if let Some(entries) = pack.get_mut(key).and_then(Value::as_array_mut) {
+                for entry in entries {
+                    if let Some(object) = entry.as_object_mut() {
+                        object.remove("_source");
+                    }
+                }
+            }
+        }
+        let text = serde_json::to_string_pretty(&pack)? + "\n";
+        std::fs::write(&rules, text).with_context(|| format!("write {}", rules.display()))?;
+        println!("created {}", rules.display());
+    }
     if readme.exists() {
         println!("kept {}", readme.display());
     } else {
@@ -808,7 +829,7 @@ const INIT_README: &str = "\
 - `design.json` holds project design parameters. Every key is optional; missing keys fall back to inferred values.
 - `rules.json` is optional. Named rules overlay by id; declarative version 2 rules append, with verbs in, notIn, equals, notEquals, present, and absent.
 - Fixed-threshold rules (e.g. sub-12px text, tight line height, oversized headlines) are advisory defaults; override or disable them in `rules.json`.
-- Rules resolve from `--rules`, the nearest `.opal/rules.json`, then `~/.opal/rules.json`.
+- Rules resolve from `--rules` or the nearest `.opal/rules.json`.
 - Design layers from `--design`, the nearest `.opal/design.json`, then `~/.opal/design.json`.
 - `baseline.json` stores accepted finding fingerprints when you run `--write-baseline`.
 
@@ -906,7 +927,7 @@ fn audit_mode(mut args: Args) -> Result<i32> {
     let rule_notes;
     let rule_sources = resolve_rules_sources(args.rules.as_deref());
     let rule_sources = expand_rules_sources(&rule_sources)?;
-    let mut rule_source_labels: Vec<String> = rule_sources
+    let rule_source_labels: Vec<String> = rule_sources
         .iter()
         .map(|(path, _)| path.display().to_string())
         .collect();
@@ -915,13 +936,11 @@ fn audit_mode(mut args: Args) -> Result<i32> {
         .map(|(_, origin)| (*origin).to_string())
         .collect();
     let rule_paths: Vec<PathBuf> = rule_sources.iter().map(|(path, _)| path.clone()).collect();
-    let ruleset = if rule_paths.is_empty() {
-        let (rules, notes) = load_default_rules(design_spec)?;
-        rule_notes = notes;
-        rule_source_labels.push("default-rules.json".to_string());
-        Some(rules)
-    } else {
-        let (rules, notes) = load_rules_with_default(&rule_paths, design_spec)?;
+    if rule_paths.is_empty() {
+        anyhow::bail!("no rules pack found; pass --rules or add .opal/rules.json");
+    }
+    let ruleset = {
+        let (rules, notes) = load_pack(&rule_paths, design_spec)?;
         rule_notes = notes;
         Some(rules)
     };
@@ -1632,8 +1651,11 @@ fn layer_for(check: &str) -> &'static str {
         "sheet"
     } else if check.starts_with("copy-")
         || check.starts_with("numbered-label")
+        || check == "aphoristic-cadence"
         || check == "em-dash-overuse"
         || check == "marketing-buzzword"
+        || check == "overused-font"
+        || check == "theater-slop-phrase"
     {
         "content"
     } else {
@@ -2544,22 +2566,19 @@ fn source_mode(root: &Path, args: &Args) -> Result<i32> {
 
     let rule_sources = resolve_rules_sources(args.rules.as_deref());
     let rule_sources = expand_rules_sources(&rule_sources)?;
-    let mut rule_source_labels: Vec<String> = rule_sources
+    let rule_source_labels: Vec<String> = rule_sources
         .iter()
         .map(|(path, _)| path.display().to_string())
         .collect();
-    let mut rule_origins: Vec<String> = rule_sources
+    let rule_origins: Vec<String> = rule_sources
         .iter()
         .map(|(_, origin)| (*origin).to_string())
         .collect();
     let rule_paths: Vec<PathBuf> = rule_sources.iter().map(|(path, _)| path.clone()).collect();
-    let (ruleset, _) = if rule_paths.is_empty() {
-        rule_source_labels.push("default-rules.json".to_string());
-        rule_origins.push("default".to_string());
-        load_default_rules(None)?
-    } else {
-        load_rules_with_default(&rule_paths, None)?
-    };
+    if rule_paths.is_empty() {
+        anyhow::bail!("no rules pack found; pass --rules or add .opal/rules.json");
+    }
+    let (ruleset, _) = { load_pack(&rule_paths, None)? };
 
     let SourceScan {
         mut findings,
